@@ -1,0 +1,367 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import express from 'express';
+import path from 'path';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type } from '@google/genai';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+// Set bigger payload limits for base64 food images
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Initialize Gemini SDK with telemetry header and apiKey
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    },
+  },
+});
+
+// Cache for Chat sessions to keep it simple, or handle history on client
+// Let's handle history on client so the server remains stateless and robust! This is the standard API route design.
+
+// --- API Endpoints ---
+
+// 1. Food Photo Scanner Endpoint
+app.post('/api/gemini/analyze-food', async (req, res) => {
+  try {
+    const { image, note } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ error: 'Data gambar makanan tidak ditemukan' });
+    }
+
+    // Process base64 image
+    let mimeType = 'image/jpeg';
+    let base64Data = image;
+
+    const match = image.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    }
+
+    const imagePart = {
+      inlineData: {
+        mimeType,
+        data: base64Data,
+      },
+    };
+
+    const promptText = `Kamu adalah ahli gizi olahraga khusus untuk program Lean Bulk / Recomposing otot pemula di Indonesia.
+Analisis gambar hidangan makanan ini secara cermat.
+Catatan dari pengguna untuk hidangan ini: "${note || 'Tidak ada catatan tambahaan'}".
+
+Tugas utama:
+1. Identifikasi nama makanan/hidangan.
+2. Identifikasi setiap bahan makanan yang terlihat beserta perkiraan ukurannya.
+3. Estimasikan kandungan nutrisi (protein, kalori, karbohidrat, lemak) untuk tiap bahan.
+4. Hitung total nutrisi untuk hidangan tersebut secara keseluruhan.
+5. Berikan feedback singkat yang memotivasi dan ramah dalam Bahasa Indonesia.
+6. Berikan saran porsi atau tambahan lauk cerdas untuk mendukung program Lean Bulk agar porsi protein optimal.
+
+Gunakan standar kandungan protein umum Indonesia:
+- 1 butir telur = 6 g protein
+- 100g tempe = 18 g protein
+- 100g tahu = 8 g protein
+- 100g dada ayam = 30 g protein
+- 1 scoop L-Men Platinum = 25 g protein
+- 1 serving L-Men Gain Mass = 22 g protein
+- 1 gelas susu sapi = 8 g protein
+- Nasi putih/merah dominan karbohidrat (estimasi karbohidrat tinggi, rata-rata proteinnya kecil 2-3g per portion).
+
+Aturan Tambahan:
+- Beritahu pengguna jika tingkat keyakinan porsi atau bahan di gambar rendah, nyatakan lewat tingkat konformasi "low", dan minta pengguna untuk menyesuaikannya porsi tersebut.
+- Jangan mengklaim tingkat akurasi 100% karena ini murni berbasis analisis gambar cerdas (tampilkan "estimasi" bukan kepastian).
+- Kembalikan response dalam bentuk structured JSON sesuai schema yang telah ditentukan.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [
+        imagePart,
+        { text: promptText }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            meal_name: { 
+              type: Type.STRING, 
+              description: 'Nama hidangan yang terdeteksi, misalnya "Nasi Ayam Bakar & Tempe"' 
+            },
+            detected_foods: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING, description: 'Nama bahan makanan, misal: "Dada Ayam Bakar"' },
+                  estimated_portion: { type: Type.STRING, description: 'Perkiraan ukuran porsi, misal: "1 potong sedang (sekitar 100g)"' },
+                  protein_g: { type: Type.NUMBER, description: 'Estimasi protein dalam gram' },
+                  calories: { type: Type.NUMBER, description: 'Estimasi kalori' },
+                  carbs_g: { type: Type.NUMBER, description: 'Estimasi karbohidrat dalam gram' },
+                  fat_g: { type: Type.NUMBER, description: 'Estimasi lemak dalam gram' },
+                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' }
+                },
+                required: ['name', 'estimated_portion', 'protein_g', 'calories', 'carbs_g', 'fat_g', 'confidence']
+              }
+            },
+            total_protein_g: { type: Type.NUMBER, description: 'Total protein dari seluruh bahan makanan' },
+            total_calories: { type: Type.NUMBER, description: 'Total kalori dari seluruh bahan makanan' },
+            total_carbs_g: { type: Type.NUMBER, description: 'Total karbohidrat dalam gram' },
+            total_fat_g: { type: Type.NUMBER, description: 'Total lemak dalam gram' },
+            confidence: { type: Type.STRING, description: 'Tingkat keyakinan deteksi keseluruhan: "low", "medium", atau "high"' },
+            short_feedback: { type: Type.STRING, description: 'Masukan singkat, santai dan ramah tentang makanan ini dalam Bahasa Indonesia.' },
+            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' }
+          },
+          required: ['meal_name', 'detected_foods', 'total_protein_g', 'total_calories', 'total_carbs_g', 'total_fat_g', 'confidence', 'short_feedback', 'lean_bulk_advice']
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || '{}');
+    return res.json(parsedData);
+
+  } catch (error: any) {
+    console.error('Error analyzing food image:', error);
+    return res.status(500).json({ error: 'Gagal menganalisis gambar makanan: ' + (error.message || error) });
+  }
+});
+
+// 2. AI Coach Query Endpoint
+app.post('/api/gemini/coach-query', async (req, res) => {
+  try {
+    const { messages } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'Format riwayat chat tidak valid' });
+    }
+
+    const systemInstruction = `Kamu adalah 'Lean Bulk AI Coach', seorang pelatih personal fitness dan nutrisi untuk program lean bulking (menaikkan massa otot seoptimal mungkin tanpa menambah lemak perut) khusus pemula di Indonesia. Kamu menganut konsep body recomposition yang praktis. 
+
+Profil Lengkap Pengguna:
+- Jenis Kelamin: Pria
+- Tinggi Badan: 168 cm
+- Berat Badan Sekarang: 58 kg
+- Golongan: Sangat pemula, butuh arahan sederhana, ringkas, dan jelas.
+- Goal Utama: Menambah massa otot tanpa membuat perut buncit (Lean Bulk, bukan dirty bulk).
+- Target Protein Harian: 90 - 100 gram per hari.
+- Target Kenaikan Berat: 0.5 - 1 kg per bulan (berat otot naik lambat tapi bersih).
+- Suplemen Saat Ini: L-Men Platinum whey (25g protein per scoop) dan L-Men Gain Mass (22g protein per serving).
+- Alat Latihan di Rumah: Dumbbell 3 kg dan 6 kg (beban relatif ringan, ingatkan untuk fokus pada tempo dan repetisi tinggi jika mentok), yoga mat, pull-up bar/dead hang setup.
+- Kendala Terbesar: Sangat benci tracking manual yang ribet (benci aplikasi yang seperti spreadsheet rumit).
+
+Aturan Mutlak Menjawab:
+1. Bahasa Indonesia: Gunakan bahasa yang santai, bersahabat, penuh energi, memotivasi, dan tidak kaku (seperti mengobrol dengan personal trainer favorit).
+2. Singkat & Praktis: Batasi jawaban maksimal 2-3 paragraf pendek atau berpoin. Anak muda pemula tidak suka membaca teks medis/ilmiah teorotis yang panjang lebar.
+3. Prioritas Protein: Selalu tekankan pentingnya mencukupi target protein harian (90-100g) melalui real food dulu (telur, tempe, tahu, ayam). L-Men Platinum whey direkomendasikan saat protein harian belum terpenuhi (melengkapi celah/protein gap).
+4. Penggunaan Gain Mass: Jelaskan bahwa L-Men Gain Mass bukanlah kewajiban setiap hari tanpa kontrol, melainkan untuk melengkapi kebutuhan kalori (calorie gap). Jika berat stuck tapi perut aman, boleh konsumsi.
+5. Perut Buncit / Lemak Naik Cepat: Jika pengguna khawatir perutnya buncit atau lingkar pinggang naik terlalu cepat (>1 cm dalam 2 minggu), sarankan untuk SEGERA kurangi L-Men Gain Mass (cukup 1/2 serving atau stop dulu) dan fokus ke makanan utuh tinggi protein serta latihan beban.
+6. Ingatkan Estimasi: Selalu ingatkan bahwa pemindaian foto makanan hanya memberi estimasi kasar, bukan angka mutlak. Penyesuaian mandiri sangat wajar.
+7. Latihan beban: Maksimalkan penggunaan dumbbell 3kg dan 6kg (misal dengan memperlambat tempo gerakan progresif atau meningkatkan repetisi / push to failure) dan dead hang di pull up bar untuk postur tubuh yang tegak.
+
+Silakan jawab pertanyaan pengguna dengan menerapkan panduan di atas.`;
+
+    // Process chat history into format required by SDK or generateContent
+    // We can use generateContent with conversational contents array
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: messages.map(msg => ({
+        role: msg.role === 'model' ? 'model' : 'user',
+        parts: [{ text: msg.parts[0]?.text || '' }]
+      })),
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+      }
+    });
+
+    return res.json({ text: response.text });
+
+  } catch (error: any) {
+    console.error('Error in coach query:', error);
+    return res.status(500).json({ error: 'Gagal menghubungi AI Coach: ' + (error.message || error) });
+  }
+});
+
+// 2b. AI Body Progress Check Endpoint
+app.post('/api/gemini/analyze-body-progress', async (req, res) => {
+  try {
+    const { frontPhoto, sidePhoto, backPhoto, weight, waist, note, previousEntry } = req.body;
+
+    const parts: any[] = [];
+
+    // Helper to extract clean base64 data and mimeType
+    const addPhotoPart = (photoBase64: string, name: string) => {
+      let mimeType = 'image/jpeg';
+      let cleanData = photoBase64;
+      const match = photoBase64.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        mimeType = match[1];
+        cleanData = match[2];
+      }
+      parts.push({
+        inlineData: {
+          mimeType,
+          data: cleanData
+        }
+      });
+    };
+
+    if (frontPhoto) addPhotoPart(frontPhoto, 'Front');
+    if (sidePhoto) addPhotoPart(sidePhoto, 'Side');
+    if (backPhoto) addPhotoPart(backPhoto, 'Back');
+
+    const promptText = `Kamu adalah 'Lean Bulk AI Coach', ahli analisis postur & visual perkembangan otot tubuh khusus program Lean Bulk / Body Recomposition pemula di Indonesia. Jawab secara ringkas, santai, memotivasi, dan ramah gaya personal trainer/sahabat fitness (tidak formal medis).
+
+Analisis foto-foto perkembangan fisik pengguna berikut secara cermat.
+
+Data Pengguna Saat Ini:
+- Berat Badan Sekarang: ${weight} kg
+- Lingkar Pinggang Sekarang: ${waist} cm
+- Catatan Tambahan Pengguna: "${note || 'Tidak ada catatan tambahan'}"
+
+${previousEntry ? `Perbandingan dengan data sebelumnya (${previousEntry.date}):
+- Berat Badan Sebelumnya: ${previousEntry.weight} kg
+- Lingkar Pinggang Sebelumnya: ${previousEntry.waist} cm
+- Analisis/Visual Summary Sebelumnya: "${previousEntry.analysis?.visual_summary || 'Tidak ada'}"` : 'Ini adalah analisis perkembangan pertama kali pengguna.'}
+
+Tugas Utama Anda:
+1. Analisis perkembangan otot secara visual (Pundak/Shoulders, Dada/Chest, Punggung/Back, Lengan/Arms), perubahan lingkar pinggang/perut (Waist/Belly), serta postur pundak/tubuh (Posture) dari foto yang dikirimkan.
+2. Tentukan tingkat perkembangan secara kualitatif dibanding kondisi sebelumnya (pilihan: shoulders, chest, back, arms: 'less' | 'same' | 'better' | 'much_better'; posture: 'worse' | 'same' | 'better' | 'much_better'; waist_belly: 'smaller' | 'stable' | 'slightly_bigger' | 'too_much_bigger').
+3. Berikan 'visual_summary' dalam bahasa Indonesia yang pendek, memotivasi, santai, dan penuh energi kebugaran. Jangan memberikan persentase lemak atau massa otot secara pasti (misal: "body fat kamu 12.3%"), hanya gunakan deskripsi visual perkembangan.
+4. Terapkan ALGORITMA RULING KETAT ini untuk merumuskan 'simple_message' dan 'progress_status':
+   - "Lean bulk kamu aman." -> Jika kenaikan berat badan berjalan lambat/seimbang dan lingkar pinggang stabil.
+   - "Protein dulu yang dibenerin. Tambah Platinum atau protein makanan." -> Jika berat badan stuck dalam 14 hari terakhir, asupan protein kurang dari 90g, dan foto visual tubuh terlihat sama saja.
+   - "Tambah kalori sedikit. Bisa tambah nasi/telur/tempe atau Gain Mass 1/2 serving." -> Jika berat badan stuck 14 hari, protein sudah 90–100g, dan latihan rutin dilakukan secara konsisten.
+   - "Kurangi Gain Mass dulu. Jangan full serving harian." -> Jika lingkar pinggang naik > 1 cm dalam 2 minggu atau perut secara visual terlihat bertambah buncit/maju kedepan.
+   - "Progress bagus. Lanjutkan." -> Jika tubuh terlihat lebih padat/full tapi lingkar pinggang stabil terkendali.
+   - "Latihan perlu progresif. Tambah reps dulu atau naik ke 6 kg untuk gerakan yang aman." -> Jika bahu/dada tidak mengalami perubahan visual tapi tingkat kesulitan latihan selalu diisi "easy".
+   - "Ingat perbaiki postur." -> Jika postur masih terlihat rounded / pundak maju ke depan (forward shoulder), ingatkan pengguna untuk rajin melakukan wall slide, chin tuck, scapular pull-up, dead hang, dan rows.
+
+Sertakan analisis postur pengguna jika bahu terlihat bungkuk/pundak maju (kyphosis/forward shoulders).
+
+Harap kembalikan response dalam bentuk structured JSON dengan format schema berikut:`;
+
+    parts.push({ text: promptText });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: parts,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            visual_summary: { type: Type.STRING, description: 'Ringkasan singkat visual tubuh dalam 2-3 kalimat santai' },
+            body_progress_score: { type: Type.INTEGER, description: 'Skor nilai perkembangan keseluruhan 1 sampai 10' },
+            muscle_visual_change: {
+              type: Type.OBJECT,
+              properties: {
+                shoulders: { type: Type.STRING, description: 'Harus berupa "less", "same", "better", atau "much_better"' },
+                chest: { type: Type.STRING, description: 'Harus berupa "less", "same", "better", atau "much_better"' },
+                back: { type: Type.STRING, description: 'Harus berupa "less", "same", "better", atau "much_better"' },
+                arms: { type: Type.STRING, description: 'Harus berupa "less", "same", "better", atau "much_better"' },
+                waist_belly: { type: Type.STRING, description: 'Harus berupa "smaller", "stable", "slightly_bigger", atau "too_much_bigger"' },
+                posture: { type: Type.STRING, description: 'Harus berupa "worse", "same", "better", atau "much_better"' }
+              },
+              required: ['shoulders', 'chest', 'back', 'arms', 'waist_belly', 'posture']
+            },
+            confidence: { type: Type.STRING, description: 'Tingkat keyakinan: "low", "medium", atau "high"' },
+            progress_status: { type: Type.STRING, description: 'Harus salah satu: "on_track", "need_more_protein", "need_more_calories", "reduce_gain_mass", "improve_training", "maintain_plan"' },
+            main_issue: { type: Type.STRING, description: 'Masalah utama saat ini yang didiagnosa secara kasat mata' },
+            next_action: { type: Type.STRING, description: 'Aksi spesifik pelatih untuk langkah latihan atau suplemen berikutnya' },
+            simple_message: { type: Type.STRING, description: 'Satu kalimat kesimpulan singkat mutlak sesuai ruling guide (misal "Lean bulk kamu aman." / "Protein dulu yang dibenerin. Tambah Platinum.", dsb.)' }
+          },
+          required: [
+            'visual_summary',
+            'body_progress_score',
+            'muscle_visual_change',
+            'confidence',
+            'progress_status',
+            'main_issue',
+            'next_action',
+            'simple_message'
+          ]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || '{}');
+    return res.json(parsedData);
+
+  } catch (error: any) {
+    console.error('Error in analyze-body-progress:', error);
+    return res.status(500).json({ error: 'Gagal menganalisis foto progres tubuh: ' + (error.message || error) });
+  }
+});
+
+// 3. Daily Summary Endpoint
+app.post('/api/gemini/daily-summary', async (req, res) => {
+  try {
+    const { totalProtein, totalCalories, supplements, workouts, weightTrend } = req.body;
+
+    const promptText = `Pahami data statistik harian program Lean Bulk pengguna hari ini:
+- Total Protein Terkonsumsi: ${totalProtein} gram (Target harian: 90-100 g)
+- Total Estimasi Kalori: ${totalCalories} kkal
+- Suplemen yang dikonsumsi hari ini: ${JSON.stringify(supplements)}
+- Status Workout hari ini: ${JSON.stringify(workouts)}
+- Info tren berat/pinggang: ${weightTrend || 'Stabil'}
+
+Berdasarkan data di atas, buat ringkasan evaluasi harian dalam Bahasa Indonesia.
+Format response harus terdiri dari TEPAT DUA BARIS PENDEK (Aturan Ketat!):
+Baris 1: Status Evaluasi hari ini (Contoh: "Hari ini kurang protein" atau "Aman, kebutuhan protein optimal!", "Porsi Gain Mass terlalu banyak", atau "Kurang kalori tapi protein aman").
+Baris 2: Rencana aksi spesifik untuk besok pagi/siang (Contoh: "Besok cukup lakukan ini: tambahkan 1 scoop Platinum atau rebut 2 butir telur dadar sebelum latihan.").
+
+Harap buat super pendek dan langsung pada intinya!`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: promptText,
+      config: {
+        temperature: 0.5,
+      }
+    });
+
+    return res.json({ text: response.text });
+
+  } catch (error: any) {
+    console.error('Error generating daily summary:', error);
+    return res.status(500).json({ error: 'Gagal menghasilkan rangkuman harian: ' + (error.message || error) });
+  }
+});
+
+
+// Serve Vite or Static files depending on environment
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req: any, res: any) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Lean Bulk Server running on port ${PORT}`);
+  });
+}
+
+startServer();

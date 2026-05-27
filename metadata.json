@@ -1,0 +1,10 @@
+{
+  "name": "Lean Bulk AI Tracker",
+  "description": "A mobile-first AI fitness tracking web app designed for beginners in Indonesia to achieve a lean bulk and body recomposition easily with Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
