@@ -90,18 +90,37 @@ export interface ChatMessage {
   parts: { text: string }[];
 }
 
-export interface UserProfile {
-  name: string;
-  gender: string;
-  height: number; // cm
-  weight: number; // kg
-  goal: string;
-  targetType: string;
-  proteinTargetMin: number;
-  proteinTargetMax: number;
-  weightGainTargetMin: number; // per month
-  weightGainTargetMax: number;
-  supplements: string[];
+export interface UserSettings {
+  profile: {
+    nickname: string;
+    gender: 'male' | 'female';
+    height_cm: number;
+    starting_weight_kg: number;
+    current_weight_kg: number;
+    starting_waist_cm: number;
+    current_waist_cm: number;
+    training_level: 'beginner' | 'intermediate';
+  };
+  goal: {
+    goal_type: 'lean_bulk' | 'body_recomposition' | 'maintain' | 'mini_cut';
+    target_weight_kg: number;
+    waist_limit_cm: number;
+    target_gain_min_kg_per_month: number;
+    target_gain_max_kg_per_month: number;
+    protein_multiplier_min: number;
+    protein_multiplier_max: number;
+    timeline_preference: 'relaxed' | 'normal' | 'aggressive';
+  };
   equipment: string[];
-  mainConcern: string;
+  supplements: string[];
 }
+
+export interface GoalHistoryEntry {
+  id: string;
+  date: string;
+  old_target_kg: number;
+  new_target_kg: number;
+  reason: string;
+  ai_suggestion?: string;
+}
+

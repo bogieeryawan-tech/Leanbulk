@@ -343,6 +343,57 @@ Harap buat super pendek dan langsung pada intinya!`;
 });
 
 
+// 4. AI Goal Advisor Endpoint
+app.post('/api/gemini/analyze-goal', async (req, res) => {
+  try {
+    const { settings, avgWeight } = req.body;
+
+    const promptText = `
+        You are a smart Personal Trainer AI for Lean Bulk and Body Recomposition in Indonesia.
+        Analyze the user's goal:
+        - Goal Type: ${settings.goal.goal_type}
+        - Current Weight: ${settings.profile.current_weight_kg} kg
+        - Target Weight: ${settings.goal.target_weight_kg} kg
+        - 14-day Avg Weight: ${avgWeight ? avgWeight.toFixed(1) : 'Unknown'} kg
+        - Current Waist: ${settings.profile.current_waist_cm} cm
+        - Limit Waist: ${settings.goal.waist_limit_cm} cm
+
+        Return JSON strictly matching this schema:
+        {
+          "goal_status": "good_target",
+          "suggested_target_weight": number,
+          "reason": "short Indonesian explanation",
+          "timeline": "suggested timeline text",
+          "next_action": "what user should do this week in Indonesian"
+        }
+        
+        Note for goal_status: Can only be one of "good_target" , "target_too_low" , "target_too_high" , "maintain_first", or "increase_target_later".
+
+        Rules:
+        - If target is near current weight and waist is stable, good_target.
+        - If user reached target and waist is stable, suggest increasing target_weight slightly for next phase.
+        - If user reached target but waist is close to limit, suggest maintain_first.
+        - Keep advice short, practical, and casual Indonesian.
+      `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: promptText,
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || '{}');
+    return res.json(parsedData);
+
+  } catch (error: any) {
+    console.error('Error in analyze-goal:', error);
+    return res.status(500).json({ error: 'Gagal menganalisis target: ' + (error.message || error) });
+  }
+});
+
 // Serve Vite or Static files depending on environment
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

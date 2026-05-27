@@ -54,14 +54,53 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
 
   const [errorMsg, setErrorMsg] = useState<string>('');
 
+  // Image compression utility
+  const compressImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1280;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.src = base64Str;
+    });
+  };
+
   // Read upload and set target base64 image
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorMsg('Ukuran gambar terlalu besar (maksimal 10MB).');
+        return;
+      }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result as string);
-        setErrorMsg('');
+      reader.onloadend = async () => {
+        const result = reader.result as string;
+        try {
+          const compressed = await compressImage(result);
+          setImage(compressed);
+          setErrorMsg('');
+        } catch (e) {
+          setErrorMsg('Gagal memproses gambar.');
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -96,14 +135,39 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
       });
 
       if (!response.ok) {
-        throw new Error('Server returned an error');
+        if (response.status === 504) {
+          throw new Error('Gemini terlalu lama merespons (Timeout). Silakan coba lagi nanti.');
+        }
+        const errJson = await response.json().catch(() => ({}));
+        if (errJson.error && errJson.error.includes("API key")) {
+           throw new Error('API Key tidak ditemukan atau tidak valid.');
+        }
+        throw new Error(errJson.error || 'Server mengalami kendala.');
       }
 
       const data = await response.json();
-      setResult(data);
+      
+      // Safe schema normalization
+      if (!data) throw new Error('Data balasan kosong.');
+      
+      const normalizedData: FoodScanResult = {
+        meal_name: typeof data.meal_name === 'string' ? data.meal_name : 'Makanan Tidak Diketahui',
+        total_protein_g: typeof data.total_protein_g === 'number' ? data.total_protein_g : 0,
+        total_calories: typeof data.total_calories === 'number' ? data.total_calories : 0,
+        total_carbs_g: typeof data.total_carbs_g === 'number' ? data.total_carbs_g : 0,
+        total_fat_g: typeof data.total_fat_g === 'number' ? data.total_fat_g : 0,
+        confidence: ['high', 'medium', 'low'].includes(data.confidence) ? data.confidence : 'medium',
+        detected_foods: Array.isArray(data.detected_foods) ? data.detected_foods : [],
+        short_feedback: typeof data.short_feedback === 'string' ? data.short_feedback : 'Tidak ada analisis pelatih.',
+        lean_bulk_advice: typeof data.lean_bulk_advice === 'string' ? data.lean_bulk_advice : 'Tetap ikuti panduan.',
+      };
+
+      setResult(normalizedData);
     } catch (e: any) {
       console.error(e);
-      setErrorMsg('Gagal mendeteksi hidangan: ' + (e.message || e));
+      let errMsg = e.message || e;
+      if (errMsg.includes('JSON')) errMsg = 'Wah, balasan dari Gemini kurang rapi (malformed). Yuk coba scan ulang fotonya!';
+      setErrorMsg('Gagal mendeteksi hidangan: ' + errMsg);
     } finally {
       setScanning(false);
     }
@@ -346,7 +410,7 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
 
               {/* Catatan optional */}
               <div className="space-y-1.5">
-                <label className="text-[10px] tracking-wider font-bold text-slate-400">CATATAN QUICK-NOTE (OPSIONAL ELIMINASI MOCKING)</label>
+                <label className="text-[10px] tracking-wider font-bold text-slate-400">CATATAN TAMBAHAN (OPSIONAL)</label>
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -593,7 +657,7 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
                     onClick={handleReducePortion}
                     className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-left text-xs text-slate-300 flex items-center justify-between cursor-pointer col-span-2"
                   >
-                    <span>降低 Kurangi Kelebihan Porsi</span>
+                    <span>Kurangi Kelebihan Porsi</span>
                     <span className="text-[10px] text-red-400 font-bold">-25% Semua</span>
                   </button>
                 </div>

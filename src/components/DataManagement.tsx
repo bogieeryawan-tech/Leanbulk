@@ -5,15 +5,16 @@
 
 import { useState, useRef, ChangeEvent } from 'react';
 import { DailyLog, BodyProgressEntry } from '../types';
-import { Download, Upload, Trash2, Settings, HelpCircle, FileText, Check } from 'lucide-react';
+import { Download, Upload, Trash2, Settings, ArchiveRestore, Database } from 'lucide-react';
 
 interface DataManagementProps {
   logs: DailyLog[];
   onImportData: (newLogs: DailyLog[], newProgress: BodyProgressEntry[]) => void;
   onResetData: () => void;
+  onLoadSampleData: () => void;
 }
 
-export default function DataManagement({ logs, onImportData, onResetData }: DataManagementProps) {
+export default function DataManagement({ logs, onImportData, onResetData, onLoadSampleData }: DataManagementProps) {
   const [showPanel, setShowPanel] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{text: string; isError: boolean} | null>(null);
@@ -121,19 +122,18 @@ export default function DataManagement({ logs, onImportData, onResetData }: Data
           </p>
 
           <div className="grid grid-cols-2 gap-2">
-            
             <button
               onClick={handleExport}
               className="py-2.5 px-3 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5 text-blue-400" /> Ekspor ke JSON
+              <Download className="w-3.5 h-3.5 text-blue-400" /> Ekspor JSON
             </button>
 
             <button
               onClick={triggerImportFile}
               className="py-2.5 px-3 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 rounded-xl text-xs font-bold text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Upload className="w-3.5 h-3.5 text-emerald-400" /> Impor dari JSON
+              <Upload className="w-3.5 h-3.5 text-emerald-400" /> Impor JSON
             </button>
             <input
               type="file"
@@ -142,14 +142,24 @@ export default function DataManagement({ logs, onImportData, onResetData }: Data
               onChange={handleImport}
               className="hidden"
             />
-
           </div>
 
           <button
-            onClick={() => setShowConfirmReset(true)}
-            className="w-full py-2.5 bg-red-950/20 hover:bg-red-900/10 border border-red-500/20 text-xs font-bold text-red-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+            onClick={() => {
+              onLoadSampleData();
+              displayStatus('Data sampel berhasil dimuat.');
+              setShowPanel(false);
+            }}
+            className="w-full py-2.5 mt-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-xs font-bold text-amber-500 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
           >
-            <Trash2 className="w-3.5 h-3.5" /> Hapus Seluruh Riwayat Data
+            <Database className="w-3.5 h-3.5" /> Muat Data Sampel
+          </button>
+
+          <button
+            onClick={() => setShowConfirmReset(true)}
+            className="w-full py-2.5 mt-2 bg-red-950/20 hover:bg-red-900/10 border border-red-500/20 text-xs font-bold text-red-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Hapus Seluruh Data
           </button>
         </div>
       )}

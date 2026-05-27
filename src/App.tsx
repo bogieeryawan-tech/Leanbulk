@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { DailyLog, FoodScanResult, SupplementLog, WeightWaistLog, WorkoutLog, BodyProgressEntry } from './types';
+import { DailyLog, FoodScanResult, SupplementLog, WeightWaistLog, WorkoutLog, BodyProgressEntry, UserSettings } from './types';
 import { getLocalDateString, formatIndoDate } from './utils';
 import DailyDashboard from './components/DailyDashboard';
 import FoodScannerModal from './components/FoodScannerModal';
@@ -14,7 +14,11 @@ import WorkoutTrackerModal from './components/WorkoutTrackerModal';
 import AICoachModal from './components/AICoachModal';
 import BodyProgressModal from './components/BodyProgressModal';
 import DataManagement from './components/DataManagement';
+import OnboardingWizard from './components/OnboardingWizard';
+import SettingsModal from './components/SettingsModal';
+import AIGoalAdvisorModal from './components/AIGoalAdvisorModal';
 import { Sparkles, Brain, Scale, Dumbbell, Zap, RefreshCw, ChevronLeft, ChevronRight, User } from 'lucide-react';
+
 
 // Generates 5 days of realistic mock seed data for a 58kg male beginner to show graph trends
 const SEED_DATA: DailyLog[] = [
@@ -153,6 +157,7 @@ const SEED_PROGRESS: BodyProgressEntry[] = [
 ];
 
 export default function App() {
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [bodyProgressHistory, setBodyProgressHistory] = useState<BodyProgressEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
@@ -164,25 +169,31 @@ export default function App() {
   const [workoutOpen, setWorkoutOpen] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [goalAdvisorOpen, setGoalAdvisorOpen] = useState(false);
 
   // Initialize and load logs & body progress from localStorage
   useEffect(() => {
+    const storedSettings = localStorage.getItem('lean_bulk_settings');
+    if (storedSettings) {
+      try {
+        setSettings(JSON.parse(storedSettings));
+      } catch (err) {
+        console.error('Error parsing settings', err);
+      }
+    }
+
     const todayStr = getLocalDateString();
     setSelectedDate(todayStr);
 
     const storedLogs = localStorage.getItem('lean_bulk_logs');
-    if (storedLogs) {
+    if (storedLogs !== null) {
       try {
         const parsed = JSON.parse(storedLogs);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setLogs(parsed);
-        } else {
-          setLogs(SEED_DATA);
-          localStorage.setItem('lean_bulk_logs', JSON.stringify(SEED_DATA));
-        }
+        setLogs(Array.isArray(parsed) ? parsed : []);
       } catch (err) {
         console.error('Error parsing logs', err);
-        setLogs(SEED_DATA);
+        setLogs([]);
       }
     } else {
       setLogs(SEED_DATA);
@@ -190,18 +201,13 @@ export default function App() {
     }
 
     const storedProgress = localStorage.getItem('lean_bulk_body_progress');
-    if (storedProgress) {
+    if (storedProgress !== null) {
       try {
         const parsedProgress = JSON.parse(storedProgress);
-        if (Array.isArray(parsedProgress) && parsedProgress.length > 0) {
-          setBodyProgressHistory(parsedProgress);
-        } else {
-          setBodyProgressHistory(SEED_PROGRESS);
-          localStorage.setItem('lean_bulk_body_progress', JSON.stringify(SEED_PROGRESS));
-        }
+        setBodyProgressHistory(Array.isArray(parsedProgress) ? parsedProgress : []);
       } catch (err) {
         console.error('Error parsing body progress', err);
-        setBodyProgressHistory(SEED_PROGRESS);
+        setBodyProgressHistory([]);
       }
     } else {
       setBodyProgressHistory(SEED_PROGRESS);
@@ -212,7 +218,13 @@ export default function App() {
   // Sync back to localstorage whenever logs change
   const saveLogs = (newLogs: DailyLog[]) => {
     setLogs(newLogs);
-    localStorage.setItem('lean_bulk_logs', JSON.stringify(newLogs));
+    try {
+      localStorage.setItem('lean_bulk_logs', JSON.stringify(newLogs));
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError' || e.name === 'QuotaExceeded') {
+        alert('Memori peramban (localStorage) penuh! Tidak bisa menyimpan data. Silakan hapus riwayat lama atau hapus semua data.');
+      }
+    }
   };
 
   // Safe getter for the selected date's log
@@ -312,7 +324,13 @@ export default function App() {
       newHistory = [entry, ...bodyProgressHistory];
     }
     setBodyProgressHistory(newHistory);
-    localStorage.setItem('lean_bulk_body_progress', JSON.stringify(newHistory));
+    try {
+      localStorage.setItem('lean_bulk_body_progress', JSON.stringify(newHistory));
+    } catch (e: any) {
+      if (e.name === 'QuotaExceededError' || e.name === 'QuotaExceeded') {
+        alert('Memori peramban (localStorage) penuh! Foto/Progres tidak bisa disimpan. Coba Ekspor data lalu Hapus Riwayat Lama.');
+      }
+    }
   };
 
   const handleClearPhotosAndHistory = () => {
@@ -341,12 +359,23 @@ export default function App() {
   const handleResetData = () => {
     saveLogs([]);
     setBodyProgressHistory([]);
-    localStorage.removeItem('lean_bulk_body_progress');
+    localStorage.setItem('lean_bulk_body_progress', JSON.stringify([]));
+  };
+  
+  const handleLoadSampleData = () => {
+    saveLogs(SEED_DATA);
+    setBodyProgressHistory(SEED_PROGRESS);
+    localStorage.setItem('lean_bulk_body_progress', JSON.stringify(SEED_PROGRESS));
   };
 
   return (
     <div className="min-h-screen bg-[#0c0c0e] text-slate-100 font-sans md:max-w-md md:mx-auto md:shadow-2xl md:border-x md:border-white/5 flex flex-col pb-12 relative overflow-hidden">
-      
+      {!settings && (
+        <OnboardingWizard onComplete={(s) => {
+          setSettings(s);
+          localStorage.setItem('lean_bulk_settings', JSON.stringify(s));
+        }} />
+      )}
       {/* Mesh Background Gradients */}
       <div className="absolute top-[-5%] left-[-10%] w-[380px] h-[380px] bg-amber-600/15 blur-[100px] rounded-full pointer-events-none z-0 animate-pulse [animation-duration:8s]"></div>
       <div className="absolute bottom-[20%] right-[-10%] w-[320px] h-[320px] bg-orange-700/10 blur-[90px] rounded-full pointer-events-none z-0"></div>
@@ -363,13 +392,15 @@ export default function App() {
               <h1 className="text-sm font-black text-white font-display uppercase tracking-wide leading-none">
                 Lean Bulk <span className="text-amber-500">AI</span>
               </h1>
-              <span className="text-[10px] text-slate-400 font-bold block">TRACKER • INDONESIAN</span>
+              <span className="text-[10px] text-slate-400 font-bold block">AI TRACKER</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 backdrop-blur-md border border-white/10 rounded-full">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 backdrop-blur-md border border-white/10 rounded-full cursor-pointer hover:bg-white/10 transition" onClick={() => setSettingsOpen(true)}>
             <User className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-[10px] text-slate-300 font-bold font-mono">58kg / 168cm</span>
+            <span className="text-[10px] text-slate-300 font-bold font-mono">
+              {settings ? `${settings.profile.current_weight_kg}kg / ${settings.profile.height_cm}cm` : 'Setup'}
+            </span>
           </div>
         </div>
 
@@ -408,6 +439,7 @@ export default function App() {
         
         {/* Core Daily Dashboard widgets */}
         <DailyDashboard
+          settings={settings}
           todayLog={todayLog}
           logs={logs}
           bodyProgressHistory={bodyProgressHistory}
@@ -420,6 +452,7 @@ export default function App() {
           onDeleteMeal={handleDeleteMeal}
           onDeleteSupplement={handleDeleteSupplement}
           onToggleWorkoutDone={handleToggleWorkoutDone}
+          onAIGoalAdvisor={() => setGoalAdvisorOpen(true)}
         />
 
         {/* Local database data backup */}
@@ -427,6 +460,7 @@ export default function App() {
           logs={logs}
           onImportData={handleImportData}
           onResetData={handleResetData}
+          onLoadSampleData={handleLoadSampleData}
         />
 
       </main>
@@ -479,6 +513,62 @@ export default function App() {
           todayWeight={todayLog.weightWaist?.weight}
           todayWaist={todayLog.weightWaist?.waist}
           onClearPhotos={handleClearPhotosAndHistory}
+        />
+      )}
+
+      {settingsOpen && settings && (
+        <SettingsModal
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onSave={(newSettings) => {
+            if (settings.goal.target_weight_kg !== newSettings.goal.target_weight_kg) {
+               const storedHist = localStorage.getItem('lean_bulk_goal_history');
+               const histData = storedHist ? JSON.parse(storedHist) : [];
+               histData.push({
+                  id: crypto.randomUUID(),
+                  date: getLocalDateString(),
+                  old_target_kg: settings.goal.target_weight_kg,
+                  new_target_kg: newSettings.goal.target_weight_kg,
+                  reason: 'Edit Manual dari Pengaturan',
+               });
+               localStorage.setItem('lean_bulk_goal_history', JSON.stringify(histData));
+            }
+            setSettings(newSettings);
+            localStorage.setItem('lean_bulk_settings', JSON.stringify(newSettings));
+            setSettingsOpen(false);
+          }}
+        />
+      )}
+
+      {goalAdvisorOpen && settings && (
+        <AIGoalAdvisorModal
+          settings={settings}
+          logs={logs}
+          bodyProgressHistory={bodyProgressHistory}
+          onClose={() => setGoalAdvisorOpen(false)}
+          onUpdateTarget={(newTarget, reason, aiSuggestion) => {
+             const newSettings = {
+                ...settings,
+                goal: { ...settings.goal, target_weight_kg: newTarget }
+             };
+             setSettings(newSettings);
+             localStorage.setItem('lean_bulk_settings', JSON.stringify(newSettings));
+             
+             // Save history
+             const storedHist = localStorage.getItem('lean_bulk_goal_history');
+             const histData = storedHist ? JSON.parse(storedHist) : [];
+             histData.push({
+                id: crypto.randomUUID(),
+                date: getLocalDateString(),
+                old_target_kg: settings.goal.target_weight_kg,
+                new_target_kg: newTarget,
+                reason: reason,
+                ai_suggestion: aiSuggestion
+             });
+             localStorage.setItem('lean_bulk_goal_history', JSON.stringify(histData));
+
+             setGoalAdvisorOpen(false);
+          }}
         />
       )}
 

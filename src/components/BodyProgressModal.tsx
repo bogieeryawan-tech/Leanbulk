@@ -42,17 +42,57 @@ export default function BodyProgressModal({
   const sideInputRef = useRef<HTMLInputElement>(null);
   const backInputRef = useRef<HTMLInputElement>(null);
 
+  // Image compression utility
+  const compressImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1280;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.src = base64Str;
+    });
+  };
+
   // Helper for reading uploaded file to base64
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'side' | 'back') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('Ukuran gambar terlalu besar (maksimal 10MB).');
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const base64String = reader.result as string;
-      if (side === 'front') setFrontPhoto(base64String);
-      if (side === 'side') setSidePhoto(base64String);
-      if (side === 'back') setBackPhoto(base64String);
+      try {
+        const compressed = await compressImage(base64String);
+        if (side === 'front') setFrontPhoto(compressed);
+        if (side === 'side') setSidePhoto(compressed);
+        if (side === 'back') setBackPhoto(compressed);
+        setErrorMessage('');
+      } catch (err) {
+        setErrorMessage('Gagal memproses gambar.');
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -101,30 +141,58 @@ export default function BodyProgressModal({
       });
 
       if (!response.ok) {
-        const errData = await response.json();
+        if (response.status === 504) {
+          throw new Error('Gemini terlalu lama merespons (Timeout). Silakan coba lagi nanti.');
+        }
+        const errData = await response.json().catch(() => ({}));
+        if (errData.error && errData.error.includes("API key")) {
+           throw new Error('API Key tidak ditemukan atau tidak valid.');
+        }
         throw new Error(errData.error || 'Terjadi kegagalan server.');
       }
 
-      const data: BodyProgressAnalysis = await response.json();
-      setResult(data);
+      const data = await response.json();
+      
+      const normalizedData: BodyProgressAnalysis = {
+        visual_summary: typeof data.visual_summary === 'string' ? data.visual_summary : 'Tidak ada catatan.',
+        body_progress_score: typeof data.body_progress_score === 'number' ? data.body_progress_score : 5,
+        muscle_visual_change: data.muscle_visual_change || {
+          shoulders: 'same',
+          chest: 'same',
+          back: 'same',
+          arms: 'same',
+          waist_belly: 'stable',
+          posture: 'same'
+        },
+        confidence: ['high', 'medium', 'low'].includes(data.confidence) ? data.confidence : 'medium',
+        progress_status: ['on_track', 'need_more_protein', 'need_more_calories', 'reduce_gain_mass', 'maintain_plan', 'improve_training'].includes(data.progress_status) ? data.progress_status : 'maintain_plan',
+        main_issue: typeof data.main_issue === 'string' ? data.main_issue : '',
+        next_action: typeof data.next_action === 'string' ? data.next_action : 'Istirahat dan latihan konsisten.',
+        simple_message: typeof data.simple_message === 'string' ? data.simple_message : 'Semangat latihan!',
+      };
 
-      // Instantly save to local state / history
+      setResult(normalizedData);
+
+      // Instantly save to local state / history (DO NOT STORE FULL PHOTOS to save quota)
       const newEntry: BodyProgressEntry = {
         id: 'bp-' + Date.now(),
         date: new Date().toISOString().split('T')[0],
-        frontPhoto: frontPhoto || undefined,
-        sidePhoto: sidePhoto || undefined,
-        backPhoto: backPhoto || undefined,
+        frontPhoto: undefined, 
+        sidePhoto: undefined,
+        backPhoto: undefined,
         weight: parsedWeight,
         waist: parsedWaist,
         note: note || undefined,
-        analysis: data
+        analysis: normalizedData
       };
 
       onSaveEntry(newEntry);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Gagal menganalisis progres fisik. Silakan coba kembali.');
+      let errMsg = err.message || err;
+      if (errMsg.includes('JSON')) errMsg = 'Wah, balasan dari Gemini AI kurang rapi (malformed). Cari foto lebih jelas dan coba lagi ya!';
+      if (err.status === 504) errMsg = 'Gemini terlalu lama merespons (Timeout). Jangan panik, cukup coba lagi.';
+      setErrorMessage(errMsg);
     } finally {
       setLoading(false);
       setLoadingStep('');
