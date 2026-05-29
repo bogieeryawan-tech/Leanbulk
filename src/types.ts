@@ -11,6 +11,9 @@ export interface MealFoodItem {
   carbs_g: number;
   fat_g: number;
   confidence: "low" | "medium" | "high";
+  source_type?: "user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate";
+  assumptions?: string[];
+  needs_clarification?: boolean;
 }
 
 export interface FoodScanResult {
@@ -23,6 +26,9 @@ export interface FoodScanResult {
   confidence: "low" | "medium" | "high";
   short_feedback: string;
   lean_bulk_advice: string;
+  source_type?: "user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate";
+  assumptions?: string[];
+  needs_clarification?: boolean;
 }
 
 export interface SupplementLog {

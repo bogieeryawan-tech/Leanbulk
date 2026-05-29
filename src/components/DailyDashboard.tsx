@@ -7,6 +7,16 @@ import { useState, useMemo } from 'react';
 import { DailyLog, BodyProgressEntry, UserSettings } from '../types';
 import { getLocalDateString, getDailyActionText, get7DayWeightAverage, formatIndoDate, WORKOUT_TEMPLATES, getLeanBulkStatus } from '../utils';
 import { 
+  getTargetProtein, 
+  getProteinStatus, 
+  getConsumedCalories, 
+  getExerciseCalories, 
+  getNetCalories, 
+  getCalorieStatus, 
+  getDailyQuickInsight,
+  getProteinRecommendation
+} from '../nutritionLogic';
+import { 
   Flame, Dumbbell, Scale, Sparkles, Brain, Plus, 
   AlertCircle, Trash2, CheckCircle, ChevronRight, Activity,
   Circle, Camera, Check, Utensils, Zap, ClipboardList, Target, MessageSquare
@@ -56,15 +66,9 @@ export default function DailyDashboard({
   const suppProtein = todayLog.supplements.reduce((sum, s) => sum + s.protein_g, 0);
   const totalProtein = foodProtein + suppProtein;
 
-  const foodCalories = todayLog.meals.reduce((sum, m) => sum + m.total_calories, 0);
-  const suppCalories = todayLog.supplements.reduce((sum, s) => sum + s.calories, 0);
-  const consumedCalories = foodCalories + suppCalories;
-  
-  const activeBurn = todayLog.activities?.reduce((sum, a) => sum + a.calories_burned, 0) || 0;
-  const workoutBurn = todayLog.workout?.isDone ? 250 : 0;
-  const totalBurn = activeBurn + workoutBurn;
-  
-  const totalCalories = Math.max(0, consumedCalories - totalBurn);
+  const consumedCalories = getConsumedCalories(todayLog);
+  const totalBurn = getExerciseCalories(todayLog);
+  const totalCalories = getNetCalories(consumedCalories, totalBurn);
   
   const chartData = useMemo(() => {
     if (!settings) return [];
@@ -105,9 +109,12 @@ export default function DailyDashboard({
     });
   }, [logs, settings, todayLog.date]);
 
-  // Calculate dynamic protein and calorie targets
-  let minProtein = 90;
-  let maxProtein = 100;
+  // Dynamic protein and calorie targets based on current weight
+  const weightKg = settings?.profile.current_weight_kg || 58;
+  const { target: targetProtein, upper: upperProtein, rangeText: proteinRangeText } = getTargetProtein(weightKg);
+  const minProtein = targetProtein;
+  const maxProtein = upperProtein;
+  
   let targetWeight = 60;
   let waistLimit = 77;
   let currentWeight = 58;
@@ -117,8 +124,6 @@ export default function DailyDashboard({
   if (settings) {
     currentWeight = settings.profile.current_weight_kg;
     currentWaist = settings.profile.current_waist_cm;
-    minProtein = Math.round((currentWeight * settings.goal.protein_multiplier_min) / 5) * 5;
-    maxProtein = Math.round((currentWeight * settings.goal.protein_multiplier_max) / 5) * 5;
     targetWeight = settings.goal.target_weight_kg;
     waistLimit = settings.goal.waist_limit_cm;
 
@@ -135,38 +140,13 @@ export default function DailyDashboard({
     targetCalories = maintenanceCalories + modifier;
   }
   
-  const progressPercent = Math.min(100, Math.round((totalProtein / minProtein) * 100));
+  const progressPercent = Math.min(100, Math.round((totalProtein / targetProtein) * 100));
 
   // Get active workout info
   const workoutDone = todayLog.workout?.isDone;
   
-  // AI Suggestions Fast Insights logic
-  let quickInsight = "";
-  const isProteinMet = totalProtein >= minProtein;
-  const isCaloriesLow = totalCalories < targetCalories - 300;
-  const isCaloriesHigh = totalCalories > targetCalories + 300;
-  const proteinDiff = Math.max(0, Math.round(minProtein - totalProtein));
-  const calorieDiff = Math.abs(Math.round(targetCalories - totalCalories));
-
-  if (totalProtein === 0 && totalCalories === 0) {
-      quickInsight = "Masih kosong nih bro! Mulai harimu dengan input makanan/minuman pertamamu.";
-  } else if (!isProteinMet && isCaloriesLow) {
-      if (proteinDiff > 30) {
-          quickInsight = `🚨 Gawat protein masih kurang ${proteinDiff}g dan kalori sisa banyak (${calorieDiff} kkal). Waktunya makan besar padat gizi (ayam bakar + nasi, sate ayam)!`;
-      } else {
-          quickInsight = `✌️ Dikit lagi nyampe target! Kurang ${proteinDiff}g protein & ${calorieDiff} kkal. Tambah 1 scoop mass gainer atau cemilan roti lapis telur mentega beres nih.`;
-      }
-  } else if (!isProteinMet && isCaloriesHigh) {
-      quickInsight = `⚠️ Protein kurang ${proteinDiff}g tapi kalori udah over ${calorieDiff} kkal! Coba cari sumber protein murni minim kalori (Whey Isolate, dada ayam rebus, putih telur) tanpa karbo/lemak lagi.`;
-  } else if (!isProteinMet && !isCaloriesLow && !isCaloriesHigh) {
-      quickInsight = `📉 Kalori udah pas target, sisa kejar protein ${proteinDiff}g lagi. Sikat whey atau sebutir dua butir telur rebus bro!`;
-  } else if (isProteinMet && isCaloriesLow) {
-      quickInsight = `🔥 Protein udah kecapai, tapi kalori masih defisit ${calorieDiff} kkal. Biar bulking maksimal, tambah liquid calories (pisang blender/gainer) atau ngemil sehat!`;
-  } else if (isProteinMet && isCaloriesHigh) {
-      quickInsight = `⚠️ Target protein aman bro, tapi surplus kalori berlebih (${calorieDiff} kkal)! Untuk kompensasi, coba bakar dengan jalan kaki santai (3-5k steps) malam ini.`;
-  } else {
-      quickInsight = "✨ PERFECT! Kalori & Protein hari ini tepat di sweet spot. Nggak seret otot, nggak bikin buncit. Pertahankan bro!";
-  }
+  // AI Suggestions Fast Insights logic using single source of truth
+  const quickInsight = getDailyQuickInsight(consumedCalories, targetCalories, totalProtein, targetProtein);
 
   // Verdict System
   const latestProgress = bodyProgressHistory.length > 0
@@ -206,22 +186,33 @@ export default function DailyDashboard({
     }
   }
 
-  // Local AI Diagnosis Simulation
-  let diagStatus = "Aman / On Track";
-  let diagDampak = "Latihan dan asupan gizi seimbang, progress pembentukan otot sesuai jalur.";
-  let diagSolusi = "Lanjutkan rutinitas harianmu. Jangan lupa istirahat cukup.";
-  let diagHindari = "Jangan ubah pola secara drastis.";
-
+  // Local AI Diagnosis Simulation based on dynamic logic
+  const proteinStatusObj = getProteinStatus(totalProtein, targetProtein);
+  const calorieStatusObj = getCalorieStatus(consumedCalories, targetCalories);
+  
+  let diagStatus = `${proteinStatusObj.status}`;
+  if (calorieStatusObj.percentage < 85 || calorieStatusObj.percentage > 115) {
+     diagStatus += ` & ${calorieStatusObj.status}`;
+  }
+  
+  const remaining = targetProtein - totalProtein;
+  let diagDampak = remaining > 0 
+     ? `Protein kurang ±${Math.round(remaining)}g. Otot terhambat regenerasinya, pemulihan dari latihan beban dumbbell atau padel berjalan lambat jika dibiarkan.`
+     : `Asupan protein cukup (±${targetProtein}g). Regenerasi jaringan otot berjalan maksimal dan prima demi proses peninggian massa otot bersih.`;
+     
+  let diagSolusi = remaining > 0 ? getProteinRecommendation(remaining) : "Pertahankan konsistensi latihan dan istirahat yang cukup bro!";
+  let diagHindari = remaining > 0 ? "Jangan overeat junk food hanya demi mengejar kalori, prioritaskan protein bersih." : "Jangan makan terlalu berlebihan melebihi anjuran jika pinggang mulai melebar.";
+  
   let minimMission = "Hari ini cukup main 3 gerakan utama: push, pull, core.";
 
   const isLateEvening = new Date().getHours() >= 19;
-  const isProteinFarBehind = totalProtein < (minProtein * 0.7);
+  const isProteinFarBehind = totalProtein < (targetProtein * 0.7);
   const showEveningAlert = todayLog.date === getLocalDateString() && isLateEvening && isProteinFarBehind;
 
   if (settings) {
      const last7Logs = [...logs].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
      
-     // 1. Protein Check
+     // 1. Protein Check from logs
      let totalProtein7 = 0;
      let validProteinDays = 0;
      last7Logs.forEach(l => {
@@ -244,39 +235,39 @@ export default function DailyDashboard({
      
      if (waistTrendAlert) {
          diagStatus = "Pinggang mulai naik";
-         diagDampak = "Surplus terlalu besar, risiko perut maju / buncit.";
-         diagSolusi = "Kurangi atau stop Gain Mass, fokus ke Platinum Whey dan protein utuh.";
-         diagHindari = "Jangan lanjutkan pola makan dirty bulk.";
+         diagDampak = "Surplus terlalu besar, ada risiko perut maju / buncit.";
+         diagSolusi = "Selaraskan asupan protein tinggi namun kurangi gainer manis harian. Sikat porsi Platinum Whey saja.";
+         diagHindari = "Jangan lanjutkan pola makan dirty bulk harian.";
          minimMission = "Pinggang naik: Stop/kurangi Gain Mass hari ini.";
      } else if (workoutCount7 < 2 && last7Logs.length >= 3) {
          diagStatus = "Latihan kurang";
          diagDampak = "Protein cukup pun tidak maksimal jadi otot kalau kurang stimulus beban.";
-         diagSolusi = "Minimal 3 gerakan: 1 push, 1 pull, 1 core.";
-         diagHindari = "Jangan cuma tracking makan tanpa latihan.";
+         diagSolusi = "Minimal lakukan 3 gerakan utama: 1 push, 1 pull, 1 core.";
+         diagHindari = "Jangan cuma tracking makan tanpa olahraga harian.";
          minimMission = "Cuma sempat 1 gerakan? Simpan sebagai Mini Session, jangan skip total.";
-     } else if (avgProtein7 > 0 && avgProtein7 < (minProtein - 10)) {
-         diagStatus = "Protein kurang";
+     } else if (avgProtein7 > 0 && avgProtein7 < (targetProtein - 10)) {
+         diagStatus = "Rata-rata protein kurang";
          diagDampak = "Otot lebih susah kebentuk, recovery lambat, latihan gampang mentok.";
-         diagSolusi = "Tambah 1 scoop Platinum atau 2 telur + tempe.";
-         diagHindari = "Jangan langsung Gain Mass full kalau protein masih kurang.";
-         minimMission = "Protein kurang: minum Platinum 1 scoop hari ini.";
+         diagSolusi = "Tambahkan minimal porsi makan protein solid atau sereal whey harian.";
+         diagHindari = "Jangan kurangi asupan protein utama.";
+         minimMission = "Protein kurang: pastikan menu makan protein hari ini.";
      } else if (settings.goal.goal_type === "lean_bulk" && workoutCount7 >= 2 && currentWeight <= settings.profile.starting_weight_kg) {
          diagStatus = "Mungkin kurang kalori";
-         diagDampak = "Berat badan dan massa otot susah naik walau latihan.";
-         diagSolusi = "Tambah nasi/lauk atau Gain Mass 1/2 serving.";
-         diagHindari = "Jangan full Gain Mass dulu.";
+         diagDampak = "Berat badan dan massa otot susah naik walau sudah konsisten latihan.";
+         diagSolusi = "Tambah asupan karbohidrat padat gizi (nasi putih, kentang) + lauk protein.";
+         diagHindari = "Jangan biarkan tubuh kekurangan sisa energi.";
          minimMission = "Berat stagnan: coba selipkan 1/2 serving Gain Mass.";
      } else if (skippedPlankCount >= 3) {
          diagStatus = "Core sering diskip";
          diagDampak = "Kekuatan panggul, perut, dan stabilitas postur melambat.";
-         diagSolusi = "Coba tambah Plank minimal 1 set aja sebelum selesai.";
-         diagHindari = "Jangan bolos gerakan perut.";
-         minimMission = "Plank sering diskip: usahakan 1 set hari ini buat jaga pinggang.";
-     } else if (avgProtein7 >= minProtein) {
-         diagStatus = "Protein aman";
-         diagDampak = "Recovery dan pembentukan otot lebih kebantu.";
-         diagSolusi = "Lanjut latihan, tidak perlu memaksakan tambah whey lagi.";
-         diagHindari = "Jangan maksa protein berlebihan.";
+         diagSolusi = "Coba tambah Plank minimal 1 set saja sebelum selesai berlatih.";
+         diagHindari = "Jangan bolos gerakan core.";
+         minimMission = "Plank sering diskip: usahakan 1 set hari ini agar postur tegap.";
+     } else if (avgProtein7 >= targetProtein) {
+         diagStatus = "Rata-rata protein aman";
+         diagDampak = "Recovery dan pembentukan otot berjalan maksimal sesuai target.";
+         diagSolusi = "Pertahankan ritme latihan saat ini tanpa perlu buru-buru menaikkan supplementasi.";
+         diagHindari = "Jangan memaksakan makan protein berlebihan yang mengganggu pencernaan.";
          minimMission = "Protein aman, fokus hancurkan set latihanmu.";
      }
   }
@@ -326,13 +317,18 @@ export default function DailyDashboard({
             <Flame className="w-4 h-4 text-amber-500" />
             Protein Harian
           </span>
-          <span className="text-xs font-mono text-zinc-400 font-bold leading-none">{totalProtein} / {minProtein}-{maxProtein}g</span>
+          <div className="text-right">
+             <span className="text-xs font-mono text-zinc-400 font-bold leading-none">{totalProtein} / {proteinRangeText}</span>
+             <span className="block text-[9px] text-amber-500 font-black tracking-wider uppercase mt-1">
+                {remaining > 0 ? `Kurang ±${Math.round(remaining)}g` : 'Target Tercapai! 🔥'}
+             </span>
+          </div>
         </div>
         
         <div className="h-4 w-full bg-black/50 rounded-full overflow-hidden p-[3px] border border-white/5 relative z-10">
           <div 
             className={`h-full rounded-full transition-all duration-500 ${
-              totalProtein >= minProtein 
+              totalProtein >= targetProtein 
                 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' 
                 : 'bg-gradient-to-r from-amber-500 to-amber-400'
             }`}
@@ -341,26 +337,42 @@ export default function DailyDashboard({
         </div>
 
         {/* Kalori Section */}
-        <div className="flex justify-between items-center gap-2 relative z-10 pt-4 border-t border-white/5">
-          <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold flex items-center gap-1.5 leading-none">
-            <Zap className="w-4 h-4 text-blue-400" />
-            Kalori Bersih (Netto)
-          </span>
-          <div className="text-right">
-            <span className="text-xs font-mono text-zinc-400 font-bold leading-none">{totalCalories} / {targetCalories} kkal</span>
-            {totalBurn > 0 && <span className="block text-[8px] text-slate-500 mt-1 uppercase font-bold text-right pt-0.5">(-{totalBurn} kcal kebakar)</span>}
+        <div className="pt-4 border-t border-white/5 space-y-3 relative z-10">
+          <div className="flex justify-between items-center">
+            <span className="text-xs uppercase tracking-widest text-slate-400 font-extrabold flex items-center gap-1.5 leading-none">
+              <Zap className="w-4 h-4 text-blue-400" />
+              Asupan Kalori Masuk (Target: {targetCalories} kkal)
+            </span>
+            <span className="text-xs font-mono text-zinc-400 font-bold leading-none">
+               {consumedCalories} kkal
+            </span>
           </div>
-        </div>
-        
-        <div className="h-4 w-full bg-black/50 rounded-full overflow-hidden p-[3px] border border-white/5 relative z-10">
-          <div 
-            className={`h-full rounded-full transition-all duration-500 ${
-              totalCalories >= targetCalories 
-                ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' 
-                : 'bg-gradient-to-r from-blue-500 to-blue-400'
-            }`}
-            style={{ width: `${Math.min(100, targetCalories > 0 ? (totalCalories / targetCalories) * 100 : 0)}%` }}
-          ></div>
+
+          <div className="h-4 w-full bg-black/50 rounded-full overflow-hidden p-[3px] border border-white/5">
+            <div 
+              className={`h-full rounded-full transition-all duration-500 ${
+                consumedCalories >= targetCalories 
+                  ? 'bg-[#10b981]' 
+                  : 'bg-[#5f63f2]'
+              }`}
+              style={{ width: `${Math.min(100, targetCalories > 0 ? (consumedCalories / targetCalories) * 100 : 0)}%` }}
+            ></div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 bg-black/30 border border-white/5 rounded-2xl p-3 text-center">
+            <div>
+              <span className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold block">Kalori Masuk</span>
+              <span className="text-xs font-bold font-mono text-white mt-1 block">{consumedCalories} <span className="text-[8px] text-slate-400">kkal</span></span>
+            </div>
+            <div>
+              <span className="text-[8px] text-slate-400 uppercase tracking-wider font-extrabold block">Estimasi Olahraga</span>
+              <span className="text-xs font-bold font-mono text-purple-400 mt-1 block">-{totalBurn} <span className="text-[8px] text-slate-500">kkal</span></span>
+            </div>
+            <div>
+              <span className="text-[8px] text-emerald-500 uppercase tracking-wider font-extrabold block">Kalori Netto</span>
+              <span className="text-xs font-bold font-mono text-emerald-400 mt-1 block">{totalCalories} <span className="text-[8px] text-slate-400">kkal</span></span>
+            </div>
+          </div>
         </div>
         
         <div className="relative z-10 mt-1">
@@ -419,7 +431,7 @@ export default function DailyDashboard({
             <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl group-hover:scale-110 transition shrink-0">
               <Activity className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black text-white uppercase tracking-wider">Kardio</span>
+            <span className="text-[10px] font-black text-white uppercase tracking-wider">Aktivitas</span>
           </button>
         </div>
 
@@ -663,7 +675,7 @@ export default function DailyDashboard({
         <div className="bg-[#111115] border border-white/10 rounded-3xl p-5 shadow-lg relative overflow-hidden">
            <div className="flex items-center gap-2 mb-4 border-b border-white/5 pb-3">
              <Brain className="w-5 h-5 text-amber-500" />
-             <span className="text-sm font-black text-white uppercase tracking-wide">Daily AI Diagnosis</span>
+             <span className="text-sm font-black text-white uppercase tracking-wide">Daily Smart Diagnosis</span>
            </div>
 
            <div className="space-y-4">

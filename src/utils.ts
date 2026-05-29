@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DailyLog, WorkoutLog } from './types';
+import { DailyLog, WorkoutLog, UserSettings } from './types';
+import { getTargetProtein, getProteinRecommendation } from './nutritionLogic';
 
 export const WORKOUT_TEMPLATES = {
   plan_a: {
@@ -143,12 +144,12 @@ export function getWaistChange(logs: DailyLog[]): { change: number; text: string
   return { change: diff, text: diffFormatted };
 }
 
-// Rule status tracker:
+/// Rule status tracker:
 // - "Lean bulk aman" if weight slowly increases and waist stable
 // - "Mungkin kurang makan" if weight stuck 14 days and protein low
 // - "Tambah kalori sedikit" if weight stuck 14 days but protein target achieved
 // - "Perut naik terlalu cepat" if waist increases more than 1 cm in 2 weeks
-export function getLeanBulkStatus(logs: DailyLog[]): { status: string; color: string; desc: string } {
+export function getLeanBulkStatus(logs: DailyLog[], settings?: UserSettings | null): { status: string; color: string; desc: string } {
   const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
   const logsWithWeight = sorted.filter(l => l.weightWaist?.weight !== undefined);
   const logsWithWaist = sorted.filter(l => l.weightWaist?.waist !== undefined);
@@ -223,6 +224,9 @@ export function getLeanBulkStatus(logs: DailyLog[]): { status: string; color: st
     averageProtein = sumProtein / totalDaysSample;
   }
 
+  const weightKg = settings?.profile.current_weight_kg || 58;
+  const { target: targetProtein } = getTargetProtein(weightKg);
+
   // 1. Perut naik terlalu cepat
   if (waistIncreaseInc > 1.0) {
     return {
@@ -233,20 +237,20 @@ export function getLeanBulkStatus(logs: DailyLog[]): { status: string; color: st
   }
 
   // 2. Weight stuck but protein is low
-  if (isWeightStuck14Days && averageProtein < 85) {
+  if (isWeightStuck14Days && averageProtein < targetProtein * 0.9) {
     return {
       status: 'Mungkin kurang makan',
       color: 'text-amber-400 border-amber-500/30 bg-amber-500/5',
-      desc: 'Berat stuck selama 14 hari terakhir dan konsumsi protein harianmu rata-rata masih rendah (< 90g). Prioritaskan protein gap!'
+      desc: `Berat stuck selama 14 hari terakhir dan konsumsi protein harianmu rata-rata masih rendah (di bawah target ±${targetProtein}g). Prioritaskan protein gap!`
     };
   }
 
   // 3. Weight stuck but protein target achieved
-  if (isWeightStuck14Days && averageProtein >= 85) {
+  if (isWeightStuck14Days && averageProtein >= targetProtein * 0.9) {
     return {
       status: 'Tambah kalori sedikit',
       color: 'text-blue-400 border-blue-500/30 bg-blue-500/5',
-      desc: 'Protein sudah sesuai target (90-100g) tapi berat stuck 14 hari. Tambah asupan kalori bersih sedikit (bisa dari nasi, tempe, atau 1/2 serving Gain Mass).'
+      desc: `Protein sudah sesuai target (±${targetProtein}g) tapi berat stuck 14 hari. Tambah asupan kalori bersih sedikit (bisa dari nasi, tempe, atau 1/2 serving Gain Mass).`
     };
   }
 
@@ -259,37 +263,17 @@ export function getLeanBulkStatus(logs: DailyLog[]): { status: string; color: st
 }
 
 // Daily action card logic
-export function getDailyActionText(todayLogs: DailyLog): string {
+export function getDailyActionText(todayLogs: DailyLog, settings?: UserSettings | null): string {
   const totalProtein = todayLogs.meals.reduce((acc, m) => acc + m.total_protein_g, 0) +
                        todayLogs.supplements.reduce((acc, s) => acc + s.protein_g, 0);
-  
-  const totalCalories = todayLogs.meals.reduce((acc, m) => acc + m.total_calories, 0) +
-                        todayLogs.supplements.reduce((acc, s) => acc + s.calories, 0);
 
-  const totalMeals = todayLogs.meals.length;
+  const weightKg = settings?.profile.current_weight_kg || 58;
+  const { target: targetProtein } = getTargetProtein(weightKg);
+  const remaining = targetProtein - totalProtein;
 
-  const gainMassLogs = todayLogs.supplements.filter(s => s.type.startsWith('gain_mass_'));
-
-  // 1. If today only 2 meals and protein is low
-  if (totalMeals <= 2 && totalProtein < 70) {
-    return 'Hari ini baru makan 2 kali dan protein masih sangat rendah. Sangat disarankan bantu dengan 1 scoop L-Men Platinum whey malam ini.';
+  if (remaining <= 0) {
+    return `Target protein harianmu tercapai (±${targetProtein}g)! Nutrisi ototmu aman hari ini. Tinggal konsisten maksimalkan latihan beban.`;
   }
 
-  // 2. If protein > 120 g
-  if (totalProtein > 120) {
-    return 'Asupan protein sudah sangat tinggi (>120g). Tubuh sudah kelebihan protein untuk bulking bersih, tidak perlu mamasukkan Platinum whey malam ini.';
-  }
-
-  // 3. If protein 90–100 g
-  if (totalProtein >= 90 && totalProtein <= 100) {
-    return 'Target protein tercapai (90-100 g)! Nutrisi ototmu aman hari ini. Tinggal konsisten maksimalkan latihan beban dumbbell harian.';
-  }
-
-  // 4. If protein < 80 g
-  if (totalProtein < 80) {
-    return 'Protein kamu masih kurang dari batas minimal harian (<80g). Prioritaskan cemilan berprotein tinggi seperti telur dadar, tempe goreng, atau Platinum whey.';
-  }
-
-  // Default
-  return 'Nutrisi hari ini terkendali cukup baik. Jaga asupan air putih dan penuhi porsi tidur 7-8 jam demi pemulihan otot sempurna.';
+  return getProteinRecommendation(remaining);
 }
