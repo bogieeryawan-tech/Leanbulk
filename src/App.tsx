@@ -201,8 +201,8 @@ export default function App() {
         setLogs([]);
       }
     } else {
-      setLogs(SEED_DATA);
-      localStorage.setItem('lean_bulk_logs', JSON.stringify(SEED_DATA));
+      setLogs([]);
+      localStorage.setItem('lean_bulk_logs', JSON.stringify([]));
     }
 
     const storedProgress = localStorage.getItem('lean_bulk_body_progress');
@@ -215,8 +215,8 @@ export default function App() {
         setBodyProgressHistory([]);
       }
     } else {
-      setBodyProgressHistory(SEED_PROGRESS);
-      localStorage.setItem('lean_bulk_body_progress', JSON.stringify(SEED_PROGRESS));
+      setBodyProgressHistory([]);
+      localStorage.setItem('lean_bulk_body_progress', JSON.stringify([]));
     }
   }, []);
 
@@ -513,6 +513,7 @@ export default function App() {
         onClose={() => setActivityOpen(false)}
         dayLog={todayLog}
         onUpdateDay={(log) => updateTodayLog(log)}
+        userWeightKg={settings?.profile.current_weight_kg || 58}
       />
 
       {scannerOpen && (

@@ -70,6 +70,9 @@ export default function DailyDashboard({
   const totalBurn = getExerciseCalories(todayLog);
   const totalCalories = getNetCalories(consumedCalories, totalBurn);
   
+  const activityBurn = todayLog.activities?.reduce((sum, a) => sum + (a.calories_burned || 0), 0) || 0;
+  const workoutBurn = Math.max(0, totalBurn - activityBurn);
+  
   const chartData = useMemo(() => {
     if (!settings) return [];
     
@@ -373,6 +376,19 @@ export default function DailyDashboard({
               <span className="text-xs font-bold font-mono text-emerald-400 mt-1 block">{totalCalories} <span className="text-[8px] text-slate-400">kkal</span></span>
             </div>
           </div>
+
+          {(activityBurn > 0 || workoutBurn > 0) && (
+            <div className="flex justify-between items-center bg-black/20 border border-white/5 rounded-xl px-3 py-1.5 text-[9px] text-slate-400 font-medium">
+              <span>Rincian bakar:</span>
+              <span className="flex gap-2">
+                {activityBurn > 0 && <span className="text-sky-400 font-mono">🏃 Aktivitas: -{activityBurn} kkal</span>}
+                {workoutBurn > 0 && <span className="text-purple-400 font-mono">🏋️ Latihan Beban: -{workoutBurn} kkal</span>}
+              </span>
+            </div>
+          )}
+          <p className="text-[9px] text-slate-500 font-normal leading-relaxed text-center italic">
+            * Termasuk estimasi aktivitas + latihan beban konservatif. Jangan merasa harus mengganti 100% kalori workout beban.
+          </p>
         </div>
         
         <div className="relative z-10 mt-1">

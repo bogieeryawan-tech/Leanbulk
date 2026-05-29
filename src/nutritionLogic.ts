@@ -71,7 +71,7 @@ export function getConsumedCalories(todayLog: DailyLog): number {
 
 /**
  * Calculates active exercise calories burned.
- * Standard weight workout is calculated based on completed exercises, plus any manually logged activities.
+ * Strength training burn is intentionally conservative because home dumbbell training has rest periods and calorie burn is hard to estimate.
  */
 export function getExerciseCalories(todayLog: DailyLog): number {
   let calories = 0;
@@ -89,52 +89,37 @@ export function getExerciseCalories(todayLog: DailyLog): number {
     
     let workoutBurn = 0;
     if (completedExercises.length > 0) {
-      // Precise calculation based on actual completed exercises, category, sets, and weight!
+      // Strength training burn is intentionally conservative because home dumbbell training has rest periods and calorie burn is hard to estimate.
       completedExercises.forEach(ex => {
         const setsCount = ex.sets || 3;
-        let baseKcal = 0;
+        let baseKcal = 5; // default
         
         switch (ex.category) {
           case 'main':
-            // Compound strength exercises like Goblet Squat, DB Romanian Deadlift, floor press
-            if (ex.weight === '6kg') {
-              baseKcal = 12; // 12 kcal per set
-            } else if (ex.weight === '3kg') {
-              baseKcal = 10;
-            } else {
-              baseKcal = 8; // bodyweight
-            }
+            baseKcal = 7.5; // compound: 6–9 kcal per set
             break;
           case 'support':
-            // Isolation exercises like curl, lateral raise, lunge
-            if (ex.weight === '6kg' || ex.weight === '3kg') {
-              baseKcal = 8;
-            } else {
-              baseKcal = 6;
-            }
+            baseKcal = 5; // support/isolation: 4–6 kcal per set
             break;
           case 'core':
-            // Abs training like Plank, Abs Roll
-            baseKcal = 5;
+            baseKcal = 4; // core: 3–5 kcal per set
             break;
           case 'mobility':
           case 'bonus':
-            // Mobility or warm up/stretching
-            baseKcal = 3;
+            baseKcal = 2.5; // mobility/bonus: 2–3 kkal per set
             break;
-          default:
-            baseKcal = 6;
         }
         
-        workoutBurn += Math.round(baseKcal * setsCount);
+        workoutBurn += baseKcal * setsCount;
       });
+      workoutBurn = Math.min(220, Math.round(workoutBurn));
     } else if (score && score !== 'none') {
       // Fallback to workoutScore if exercises array is empty or not tracked
-      if (score === 'full') workoutBurn = 250;
-      else if (score === 'solid') workoutBurn = 200;
-      else if (score === 'minimum_effective') workoutBurn = 150;
-      else if (score === 'light') workoutBurn = 100;
-      else if (score === 'mini_session') workoutBurn = 50;
+      if (score === 'full') workoutBurn = 180;
+      else if (score === 'solid') workoutBurn = 130;
+      else if (score === 'minimum_effective') workoutBurn = 100;
+      else if (score === 'light') workoutBurn = 70;
+      else if (score === 'mini_session') workoutBurn = 35;
     }
     calories += workoutBurn;
   }

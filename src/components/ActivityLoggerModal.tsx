@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { DailyLog } from '../types';
 import { X, Search, Activity, Zap, Info } from 'lucide-react';
+import { calculatePadelCalories } from '../nutritionLogic';
 
 interface ActivityLoggerModalProps {
   isOpen: boolean;
   onClose: () => void;
   dayLog: DailyLog;
   onUpdateDay: (log: DailyLog) => void;
+  userWeightKg: number;
 }
 
 const commonActivities = [
@@ -19,7 +21,7 @@ const commonActivities = [
   { id: 'berenang', name: 'Berenang', default_minutes: 45, default_cals_per_min: 6 }, // ~270 kcal for 45min
 ];
 
-export function ActivityLoggerModal({ isOpen, onClose, dayLog, onUpdateDay }: ActivityLoggerModalProps) {
+export function ActivityLoggerModal({ isOpen, onClose, dayLog, onUpdateDay, userWeightKg }: ActivityLoggerModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [customName, setCustomName] = useState('');
   const [customMinutes, setCustomMinutes] = useState(30);
@@ -29,6 +31,10 @@ export function ActivityLoggerModal({ isOpen, onClose, dayLog, onUpdateDay }: Ac
   // Padel specific states
   const [padelHours, setPadelHours] = useState(2);
   const [padelPlayers, setPadelPlayers] = useState(6);
+
+  const padelDetails = calculatePadelCalories(userWeightKg, padelHours * 60, padelPlayers);
+  const activeMins = Math.round((padelHours * 60) * padelDetails.activeFactor);
+  const estimatedCalories = padelDetails.calories;
 
   if (!isOpen) return null;
 
@@ -173,22 +179,29 @@ export function ActivityLoggerModal({ isOpen, onClose, dayLog, onUpdateDay }: Ac
                 <div>
                   <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest">Estimasi Bermain Aktif</span>
                   <span className="block text-lg font-mono font-black text-white mt-1">
-                    {Math.round((padelHours * 60) * (4 / padelPlayers))} <span className="text-xs text-slate-500">mnt</span>
+                    {activeMins} <span className="text-xs text-slate-500">mnt</span>
                   </span>
                 </div>
                 <div className="text-right">
                   <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-widest">Kalori Terbakar</span>
                   <span className="block text-lg font-mono font-black text-blue-400 mt-1 flex items-center gap-1 justify-end">
-                    <Zap className="w-4 h-4" /> {Math.round((padelHours * 60) * (4 / padelPlayers) * 7.5)} <span className="text-xs text-slate-500">kkal</span>
+                    <Zap className="w-4 h-4" /> {estimatedCalories} <span className="text-xs text-slate-500">kkal</span>
                   </span>
                 </div>
               </div>
 
+              <div className="text-center mt-3 px-1">
+                <p className="text-[10px] text-slate-300 font-semibold">
+                  Padel {padelHours} jam, {padelPlayers} orang: ±{estimatedCalories} kkal
+                </p>
+                <p className="text-[9px] text-slate-500 leading-relaxed font-normal mt-1 italic">
+                  Dihitung dari berat badan, durasi, dan jumlah pemain. Karena ada rotasi, estimasi lebih rendah dibanding main full nonstop.
+                </p>
+              </div>
+
               <button
                 onClick={() => {
-                  const activeMins = Math.round((padelHours * 60) * (4 / padelPlayers));
-                  const estimatedCalories = Math.round(activeMins * 7.5);
-                  handleAddActivity(`Padel (${padelHours}j, ${padelPlayers} Org)`, activeMins, estimatedCalories);
+                  handleAddActivity(`Padel (${padelHours}j, ${padelPlayers} Org)`, padelHours * 60, estimatedCalories);
                 }}
                 className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest text-[11px] py-4 rounded-xl transition mt-4"
               >

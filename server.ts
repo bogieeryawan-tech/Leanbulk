@@ -61,7 +61,7 @@ app.post('/api/gemini/analyze-food', async (req, res) => {
 
     const promptText = `Kamu adalah ahli gizi olahraga khusus untuk program Lean Bulk / Recomposing otot pemula di Indonesia.
 Analisis gambar hidangan makanan ini secara cermat.
-Catatan dari pengguna untuk hidangan ini: "${note || 'Tidak ada catatan tambahaan'}".
+Catatan dari pengguna untuk hidangan ini: "${note || 'Tidak ada catatan tambahan'}".
 
 Tugas utama:
 1. Identifikasi nama makanan/hidangan.
@@ -76,10 +76,25 @@ Gunakan standar kandungan protein umum Indonesia:
 - 100g tempe = 18 g protein
 - 100g tahu = 8 g protein
 - 100g dada ayam = 30 g protein
-- 1 scoop L-Men Platinum = 25 g protein
-- 1 serving L-Men Gain Mass = 22 g protein
+- 1 scoop Whey Protein / WPI / L-Men Platinum = 25 g protein
+- 1 serving Gainer / L-Men Gain Mass = 22 g protein
 - 1 gelas susu sapi = 8 g protein
-- Nasi putih/merah dominan karbohidrat (estimasi karbohidrat tinggi, rata-rata proteinnya kecil 2-3g per portion).
+- Nasi putih/merah dominan karbohidrat (estimasi karbohidrat tinggi, rata-rata proteinnya kecil 2-3g per porsi).
+
+ATURAN GIZI & PENGAMANAN PENTING (DIKECUALIKAN & KHUSUS):
+1. Minuman Tanpa Protein: Jika makanan yang dianalisis atau ditulis berupa minuman non-protein (seperti kopi hitam, teh manis, air mineral, teh tawar, soda, teh boba manis tanpa susu/protein):
+   - Set total_protein_g secara mutlak ke 0.
+   - Di short_feedback & lean_bulk_advice, berikan feedback yang ramah dalam Bahasa Indonesia bahwa minuman ini tidak menyumbang protein untuk sintesis otot, namun ingatkan asupan kalori cairnya (jika berupa kopi/teh manis/minuman manis karena mengandung gula tinggi/kalori cair yang perlu diperhatikan saat lean bulk).
+2. Minuman Protein/Whey/Gainer: Jika masukan/gambar berupa "protein shake", "WPI", "whey protein", atau brand gainer/suplemen komersil lainnya, petakan kandungan proteinnya secara optimis (misalnya 22-25g protein per scoop/serving).
+3. Gambar Tidak Relevan: Jika gambar yang dikirim kosong, blur parah, atau tidak relevan dengan makanan/minuman sama sekali (misalnya foto kucing, anjing, sepatu, mobil, atau dinding polos):
+   - Set confidence ke "low".
+   - Set meal_name ke "Gambar Tidak Terdeteksi".
+   - Set total_protein_g secara mutlak ke 0.
+   - Set total_calories secara mutlak ke 0.
+   - Set total_carbs_g secara mutlak ke 0.
+   - Set total_fat_g secara mutlak ke 0.
+   - Set short_feedback ke "Mohon kirimkan foto makanan yang jelas agar pelatih bisa mengestimasikan kalorinya dengan akurat!"
+   - Set lean_bulk_advice ke "Pelatih tidak mendeteksi makanan atau minuman yang valid pada foto. Kamu bisa mencoba berfoto ulang atau menggunakan fitur input teks (Ketik Manual Saja) untuk mencatat nutrisi hari ini."
 
 Aturan Tambahan:
 - Beritahu pengguna jika tingkat keyakinan porsi atau bahan di gambar rendah, nyatakan lewat tingkat konformasi "low", dan minta pengguna untuk menyesuaikannya porsi tersebut.
@@ -136,6 +151,98 @@ Aturan Tambahan:
   } catch (error: any) {
     console.error('Error analyzing food image:', error);
     return res.status(500).json({ error: 'Gagal menganalisis gambar makanan: ' + (error.message || error) });
+  }
+});
+
+// 1b. Food Text-Only Analyzer Endpoint
+app.post('/api/gemini/analyze-food-text', async (req, res) => {
+  try {
+    const { note } = req.body;
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'Catatan makanan tidak boleh kosong' });
+    }
+
+    const promptText = `Kamu adalah ahli gizi olahraga khusus untuk program Lean Bulk / Recomposing otot pemula di Indonesia.
+Kamu diminta menganalisis catatan deskripsi hidangan makanan yang diinput langsung oleh pengguna.
+Catatan hidangan makanan: "${note}".
+
+Tugas utama:
+1. Identifikasi nama makanan/hidangan dari teks tersebut.
+2. Identifikasi setiap bahan makanan yang ditulis beserta perkiraan ukurannya.
+3. Estimasikan kandungan nutrisi (protein, kalori, karbohidrat, lemak) untuk tiap bahan.
+4. Hitung total nutrisi untuk hidangan tersebut secara keseluruhan.
+5. Berikan feedback singkat yang memotivasi dan ramah dalam Bahasa Indonesia.
+6. Berikan saran porsi atau tambahan lauk cerdas untuk mendukung program Lean Bulk agar porsi protein optimal.
+
+Gunakan standar kandungan protein umum Indonesia:
+- 1 butir telur = 6 g protein
+- 100g tempe = 18 g protein
+- 100g tahu = 8 g protein
+- 100g dada ayam = 30 g protein
+- 1 scoop Whey Protein / WPI / L-Men Platinum = 25 g protein
+- 1 serving Gainer / L-Men Gain Mass = 22 g protein
+- 1 gelas susu sapi = 8 g protein
+- Nasi putih/merah dominan karbohidrat (estimasi karbohidrat tinggi, rata-rata proteinnya kecil 2-3g per porsi).
+
+ATURAN GIZI & PENGAMANAN PENTING (DIKECUALIKAN & KHUSUS):
+1. Minuman Tanpa Protein: Jika makanan yang dianalisis atau ditulis berupa minuman non-protein (seperti kopi hitam, teh manis, air mineral, teh tawar, soda, teh boba manis tanpa susu/protein):
+   - Set total_protein_g secara mutlak ke 0.
+   - Di short_feedback & lean_bulk_advice, berikan feedback yang ramah dalam Bahasa Indonesia bahwa minuman ini tidak menyumbang protein untuk sintesis otot, namun ingatkan asupan kalori cairnya (jika berupa kopi/teh manis/minuman manis karena mengandung gula tinggi/kalori cair yang perlu diperhatikan saat lean bulk).
+2. Minuman Protein/Whey/Gainer: Jika masukan/gambar berupa "protein shake", "WPI", "whey protein", atau brand gainer/suplemen komersil lainnya, petakan kandungan proteinnya secara optimis (misalnya 22-25g protein per scoop/serving).
+
+Aturan Tambahan:
+- Berikan penanda "high" pada confidence karena input teks merupakan konfirmasi langsung dari pengguna tentang apa yang dimakannya.
+- Jangan mengklaim tingkat akurasi 100% karena ini murni berbasis analisis deskripsi teks pintar.
+- Kembalikan response dalam bentuk structured JSON sesuai schema yang telah ditentukan.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [{ text: promptText }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            meal_name: { 
+              type: Type.STRING, 
+              description: 'Nama hidangan yang terdeteksi, misalnya "Nasi Ayam Bakar & Tempe"' 
+            },
+            detected_foods: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING, description: 'Nama bahan makanan, misal: "Dada Ayam Bakar"' },
+                  estimated_portion: { type: Type.STRING, description: 'Perkiraan ukuran porsi, misal: "1 potong sedang (sekitar 100g)"' },
+                  protein_g: { type: Type.NUMBER, description: 'Estimasi protein dalam gram' },
+                  calories: { type: Type.NUMBER, description: 'Estimasi kalori' },
+                  carbs_g: { type: Type.NUMBER, description: 'Estimasi karbohidrat dalam gram' },
+                  fat_g: { type: Type.NUMBER, description: 'Estimasi lemak dalam gram' },
+                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' }
+                },
+                required: ['name', 'estimated_portion', 'protein_g', 'calories', 'carbs_g', 'fat_g', 'confidence']
+              }
+            },
+            total_protein_g: { type: Type.NUMBER, description: 'Total protein dari seluruh bahan makanan' },
+            total_calories: { type: Type.NUMBER, description: 'Total kalori dari seluruh bahan makanan' },
+            total_carbs_g: { type: Type.NUMBER, description: 'Total karbohidrat dalam gram' },
+            total_fat_g: { type: Type.NUMBER, description: 'Total lemak dalam gram' },
+            confidence: { type: Type.STRING, description: 'Tingkat keyakinan deteksi keseluruhan: "low", "medium", atau "high"' },
+            short_feedback: { type: Type.STRING, description: 'Masukan singkat, santai dan ramah tentang makanan ini dalam Bahasa Indonesia.' },
+            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' }
+          },
+          required: ['meal_name', 'detected_foods', 'total_protein_g', 'total_calories', 'total_carbs_g', 'total_fat_g', 'confidence', 'short_feedback', 'lean_bulk_advice']
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text || '{}');
+    return res.json(parsedData);
+
+  } catch (error: any) {
+    console.error('Error analyzing food text:', error);
+    return res.status(500).json({ error: 'Gagal menganalisis catatan makanan: ' + (error.message || error) });
   }
 });
 

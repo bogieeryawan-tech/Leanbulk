@@ -115,24 +115,29 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
 
     setScanning(true);
     try {
-      // If we don't have an image but have a note, we can generate a mock solid color placeholder or prompt without image
-      // But Gemini analyze-food expects an image. Let's send a standard solid-color base64 image if they just entered text
-      let imageToSend = image;
-      if (!imageToSend) {
-        // Simple base64 for 1x1 black pixel to support text-only scan mode gracefully!
-        imageToSend = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      let response;
+      if (image) {
+        response = await fetch('/api/gemini/analyze-food', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image,
+            note,
+          }),
+        });
+      } else {
+        response = await fetch('/api/gemini/analyze-food-text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            note,
+          }),
+        });
       }
-
-      const response = await fetch('/api/gemini/analyze-food', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: imageToSend,
-          note: note,
-        }),
-      });
 
       if (!response.ok) {
         if (response.status === 504) {
@@ -326,14 +331,18 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
   // Direct manual log entry generator
   const handleSimpanManualDirect = () => {
     setErrorMsg('');
-    if (!editedMealName || editedProtein <= 0) {
-      setErrorMsg('Nama hidangan dan protein harus diisi!');
+    if (!editedMealName || !editedMealName.trim()) {
+      setErrorMsg('Nama makanan/minuman wajib diisi!');
+      return;
+    }
+    if (editedProtein <= 0 && editedCalories <= 0 && editedCarbs <= 0 && editedFat <= 0) {
+      setErrorMsg('Isi minimal salah satu angka nutrisi: kalori, protein, karbo, atau lemak.');
       return;
     }
     const manualMeal: FoodScanResult = {
       meal_name: editedMealName,
       total_protein_g: editedProtein,
-      total_calories: editedCalories || Math.round(editedProtein * 4), // simple multiplier if left blank
+      total_calories: editedCalories,
       total_carbs_g: editedCarbs || 0,
       total_fat_g: editedFat || 0,
       confidence: 'high',
