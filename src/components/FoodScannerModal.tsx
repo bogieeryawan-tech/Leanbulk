@@ -155,6 +155,19 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
       // Safe schema normalization
       if (!data) throw new Error('Data balasan kosong.');
       
+      const normalizedFoods = (Array.isArray(data.detected_foods) ? data.detected_foods : []).map((food: any) => ({
+        name: typeof food.name === 'string' ? food.name : 'Elemen Hidangan',
+        estimated_portion: typeof food.estimated_portion === 'string' ? food.estimated_portion : '1 porsi',
+        protein_g: typeof food.protein_g === 'number' ? food.protein_g : 0,
+        calories: typeof food.calories === 'number' ? food.calories : 0,
+        carbs_g: typeof food.carbs_g === 'number' ? food.carbs_g : 0,
+        fat_g: typeof food.fat_g === 'number' ? food.fat_g : 0,
+        confidence: ['high', 'medium', 'low'].includes(food.confidence) ? food.confidence : 'medium',
+        source_type: ['user_input', 'estimated_common_food', 'ai_search', 'fallback_estimate'].includes(food.source_type) ? food.source_type : undefined,
+        assumptions: Array.isArray(food.assumptions) ? food.assumptions : undefined,
+        needs_clarification: typeof food.needs_clarification === 'boolean' ? food.needs_clarification : undefined,
+      }));
+
       const normalizedData: FoodScanResult = {
         meal_name: typeof data.meal_name === 'string' ? data.meal_name : 'Makanan Tidak Diketahui',
         total_protein_g: typeof data.total_protein_g === 'number' ? data.total_protein_g : 0,
@@ -162,9 +175,12 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
         total_carbs_g: typeof data.total_carbs_g === 'number' ? data.total_carbs_g : 0,
         total_fat_g: typeof data.total_fat_g === 'number' ? data.total_fat_g : 0,
         confidence: ['high', 'medium', 'low'].includes(data.confidence) ? data.confidence : 'medium',
-        detected_foods: Array.isArray(data.detected_foods) ? data.detected_foods : [],
+        detected_foods: normalizedFoods,
         short_feedback: typeof data.short_feedback === 'string' ? data.short_feedback : 'Tidak ada analisis pelatih.',
         lean_bulk_advice: typeof data.lean_bulk_advice === 'string' ? data.lean_bulk_advice : 'Tetap ikuti panduan.',
+        source_type: ['user_input', 'estimated_common_food', 'ai_search', 'fallback_estimate'].includes(data.source_type) ? data.source_type : undefined,
+        assumptions: Array.isArray(data.assumptions) ? data.assumptions : undefined,
+        needs_clarification: typeof data.needs_clarification === 'boolean' ? data.needs_clarification : undefined,
       };
 
       setResult(normalizedData);
@@ -306,11 +322,12 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
 
   const handleSaveEdit = () => {
     if (!result) return;
+    const calVal = editedCalories > 0 ? editedCalories : Math.round(editedProtein * 4 + (editedCarbs || 0) * 4 + (editedFat || 0) * 9);
     setResult({
       ...result,
       meal_name: editedMealName,
       total_protein_g: editedProtein,
-      total_calories: editedCalories,
+      total_calories: calVal,
       total_carbs_g: editedCarbs,
       total_fat_g: editedFat,
       detected_foods: [
@@ -318,10 +335,11 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
           name: 'Penyesuaian Manual',
           estimated_portion: 'Custom',
           protein_g: editedProtein,
-          calories: editedCalories,
+          calories: calVal,
           carbs_g: editedCarbs,
           fat_g: editedFat,
-          confidence: 'high' as const
+          confidence: 'high' as const,
+          source_type: 'user_input'
         }
       ]
     });
@@ -339,10 +357,11 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
       setErrorMsg('Isi minimal salah satu angka nutrisi: kalori, protein, karbo, atau lemak.');
       return;
     }
+    const calVal = editedCalories > 0 ? editedCalories : Math.round(editedProtein * 4 + (editedCarbs || 0) * 4 + (editedFat || 0) * 9);
     const manualMeal: FoodScanResult = {
       meal_name: editedMealName,
       total_protein_g: editedProtein,
-      total_calories: editedCalories,
+      total_calories: calVal,
       total_carbs_g: editedCarbs || 0,
       total_fat_g: editedFat || 0,
       confidence: 'high',
@@ -351,14 +370,18 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
           name: editedMealName,
           estimated_portion: 'Input Manual',
           protein_g: editedProtein,
-          calories: editedCalories,
+          calories: calVal,
           carbs_g: editedCarbs,
           fat_g: editedFat,
-          confidence: 'high'
+          confidence: 'high',
+          source_type: 'user_input'
         }
       ],
       short_feedback: 'Makan dicatat manual secara cepat.',
-      lean_bulk_advice: 'Pastikan rasio protein sesuai demi memicu sintesis otot maksimal.'
+      lean_bulk_advice: 'Pastikan rasio protein sesuai demi memicu sintesis otot maksimal.',
+      source_type: 'user_input',
+      assumptions: ['Dicatat langsung oleh pengguna (input manual)'],
+      needs_clarification: false
     };
     onSaveMeal(manualMeal);
     onClose();

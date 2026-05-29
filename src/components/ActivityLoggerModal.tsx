@@ -12,8 +12,6 @@ interface ActivityLoggerModalProps {
 }
 
 const commonActivities = [
-  { id: 'padel_casual', name: 'Padel (Santai / Doubles)', default_minutes: 120, default_cals_per_min: 4 }, // ~480 kcal for 120min
-  { id: 'padel_intense', name: 'Padel (Intens / Singles)', default_minutes: 60, default_cals_per_min: 7.5 }, // ~450 kcal for 60min
   { id: 'jalan_kaki', name: 'Jalan Kaki Santai', default_minutes: 30, default_cals_per_min: 4 }, // ~120 kcal for 30min
   { id: 'lari_jogging', name: 'Lari / Jogging', default_minutes: 30, default_cals_per_min: 9 }, // ~270 kcal for 30min
   { id: 'sepeda', name: 'Bersepeda Santai', default_minutes: 60, default_cals_per_min: 5 }, // ~300 kcal for 60min
@@ -131,7 +129,7 @@ export function ActivityLoggerModal({ isOpen, onClose, dayLog, onUpdateDay, user
 
               <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl flex items-start gap-2 mt-4">
                 <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
-                <p className="text-[10px] text-blue-200/80 leading-relaxed font-medium">Bermain Padel 2 jam biasanya sangat santai dengan banyak jeda ngobrol, jadi estimasi kalori dibakar tetap normal (~480 kkal), tidak dihitung seperti main 2 jam terus-terusan secara intens.</p>
+                <p className="text-[10px] text-blue-200/80 leading-relaxed font-medium">Untuk padel, gunakan tab Kalkulator Padel agar estimasi kalori mengikuti berat badan, durasi, dan jumlah pemain.</p>
               </div>
             </div>
           ) : activeTab === 'padel' ? (

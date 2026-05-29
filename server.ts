@@ -31,8 +31,253 @@ const ai = new GoogleGenAI({
 // Cache for Chat sessions to keep it simple, or handle history on client
 // Let's handle history on client so the server remains stateless and robust! This is the standard API route design.
 
-// --- API Endpoints ---
+function applyNutritionGuardrails(data: any): any {
+  if (!data || typeof data !== 'object') return data;
 
+  if (!data.detected_foods || !Array.isArray(data.detected_foods)) {
+    data.detected_foods = [];
+  }
+
+  const mealNameLower = (data.meal_name || "").toLowerCase();
+
+  let totalProtein = 0;
+  let totalCalories = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+
+  data.detected_foods.forEach((food: any) => {
+    if (!food || typeof food !== 'object') return;
+    
+    const nameLower = (food.name || "").toLowerCase();
+    if (!food.assumptions || !Array.isArray(food.assumptions)) {
+      food.assumptions = [];
+    }
+
+    // Gula detection for calorie mapping (C)
+    const isSugarIndicated = nameLower.includes("gula") || nameLower.includes("aren") || nameLower.includes("sirup") || nameLower.includes("manis");
+
+    // Check if contains dairy milk / creamer / whey etc
+    const hasSusuOrProteinOptions = (
+      nameLower.includes("susu") || 
+      nameLower.includes("milk") || 
+      nameLower.includes("creamer") || 
+      nameLower.includes("cream") || 
+      nameLower.includes("whey") || 
+      nameLower.includes("protein") || 
+      nameLower.includes("gainer") ||
+      mealNameLower.includes("susu") ||
+      mealNameLower.includes("milk") ||
+      mealNameLower.includes("creamer") ||
+      mealNameLower.includes("cream") ||
+      mealNameLower.includes("whey") ||
+      mealNameLower.includes("protein") ||
+      mealNameLower.includes("gainer")
+    );
+
+    // Rule A: Kopi hitam / Americano / Long Black / Kopi Gula Aren / Kopi Hitam Gula Aren without Susu/Protein
+    const isKopiHitamPattern = (
+      nameLower.includes("kopi hitam") || 
+      nameLower.includes("americano") || 
+      nameLower.includes("long black") || 
+      nameLower.includes("kopi gula aren") || 
+      nameLower.includes("kopi hitam gula aren") ||
+      mealNameLower.includes("kopi hitam") ||
+      mealNameLower.includes("americano") ||
+      mealNameLower.includes("long black") ||
+      mealNameLower.includes("kopi gula aren") ||
+      mealNameLower.includes("kopi hitam gula aren")
+    ) && !hasSusuOrProteinOptions;
+
+    // Rule B: Minuman manis tanpa susu
+    const isMinumanManisTanpaSusuPattern = (
+      nameLower.includes("teh manis") || 
+      nameLower.includes("es teh manis") || 
+      nameLower.includes("soda") || 
+      nameLower.includes("sirup") || 
+      nameLower.includes("minuman gula") ||
+      isKopiHitamPattern
+    ) && !hasSusuOrProteinOptions;
+
+    // Apply Rule A & B: protein must be 0
+    if (isKopiHitamPattern || isMinumanManisTanpaSusuPattern) {
+      food.protein_g = 0;
+      food.source_type = "estimated_common_food";
+      if (!food.assumptions.some((a: string) => a.toLowerCase().includes("protein 0g"))) {
+        food.assumptions.push("Kopi hitam tanpa susu/creamer diasumsikan protein 0g.");
+      }
+    }
+
+    // Rule C: Kalori Gula (calories minimal = gram gula x 4 or carbs_g x 4 if it is a sugary drink)
+    if (isSugarIndicated && (food.carbs_g || 0) > 0) {
+      const minCals = Math.round((food.carbs_g || 0) * 4);
+      if ((food.calories || 0) < minCals) {
+        food.calories = minCals;
+      }
+    }
+
+    // Rule D: Kopi Susu
+    const isKopiSusuPattern = (
+      nameLower.includes("kopi susu") || 
+      nameLower.includes("latte") || 
+      nameLower.includes("cappuccino") || 
+      nameLower.includes("milk coffee") || 
+      nameLower.includes("susu")
+    ) && !(
+      nameLower.includes("non-dairy") || 
+      nameLower.includes("almond") || 
+      nameLower.includes("oat") || 
+      nameLower.includes("soy") ||
+      nameLower.includes("tempe") || 
+      nameLower.includes("tahu")
+    );
+
+    if (isKopiSusuPattern) {
+      if ((food.protein_g || 0) === 0) {
+        food.protein_g = 4; // default 3-6g
+      }
+      if ((food.calories || 0) < 120) {
+        food.calories = 140; // default 120-180 kkal
+      }
+      if (!food.assumptions.some((a: string) => a.includes("kopi susu diasumsikan"))) {
+        food.assumptions.push("Kopi susu diasumsikan memakai susu sekitar 120–150ml.");
+      }
+    }
+
+    // Rule F: Telur must have protein
+    if (nameLower.includes("telur") || nameLower.includes("egg")) {
+      if ((food.protein_g || 0) <= 0) {
+        food.protein_g = 6;
+      }
+      if ((food.calories || 0) <= 0) {
+        food.calories = 75;
+      }
+    }
+
+    // Rule G: Whey/Gainer must have protein
+    const isWhey = nameLower.includes("whey") || nameLower.includes("protein powder") || nameLower.includes("l-men platinum") || nameLower.includes("wpi");
+    const isGainer = nameLower.includes("gainer") || nameLower.includes("l-men gain mass") || nameLower.includes("gain mass");
+
+    if (isWhey) {
+      if ((food.protein_g || 0) < 20) {
+        food.protein_g = 25;
+      }
+      if ((food.calories || 0) <= 0) {
+        food.calories = 120;
+      }
+    } else if (isGainer) {
+      if ((food.protein_g || 0) < 10) {
+        food.protein_g = 22;
+      }
+      if ((food.calories || 0) <= 0) {
+        food.calories = 280;
+      }
+    }
+
+    // Rule E: Kalori tidak boleh 0 jika ada bahan berkalori
+    const hasCalorieDenseIng = (
+      nameLower.includes("nasi") ||
+      nameLower.includes("mie") || 
+      nameLower.includes("tepung") || 
+      nameLower.includes("gula") || 
+      nameLower.includes("susu") || 
+      nameLower.includes("minyak") || 
+      nameLower.includes("santan") || 
+      nameLower.includes("roti") || 
+      nameLower.includes("goreng") || 
+      nameLower.includes("rendang") ||
+      nameLower.includes("ayam") ||
+      nameLower.includes("daging")
+    );
+
+    if (hasCalorieDenseIng && (food.calories || 0) <= 0) {
+      const calculatedCals = Math.round((food.protein_g || 0) * 4 + (food.carbs_g || 0) * 4 + (food.fat_g || 0) * 9);
+      food.calories = calculatedCals > 0 ? calculatedCals : 100;
+    }
+
+    // Ensure source_type is set
+    if (!food.source_type) {
+      if (isKopiSusuPattern || isMinumanManisTanpaSusuPattern || isSugarIndicated) {
+        food.source_type = "estimated_common_food";
+      } else {
+        food.source_type = "fallback_estimate";
+      }
+    }
+
+    totalProtein += food.protein_g || 0;
+    totalCalories += food.calories || 0;
+    totalCarbs += food.carbs_g || 0;
+    totalFat += food.fat_g || 0;
+  });
+
+  // Assign overall total summaries
+  data.total_protein_g = Math.round(totalProtein);
+  data.total_calories = Math.round(totalCalories);
+  data.total_carbs_g = Math.round(totalCarbs);
+  data.total_fat_g = Math.round(totalFat);
+
+  // Global properties setup
+  if (!data.source_type) {
+    const types = data.detected_foods.map((f: any) => f.source_type).filter(Boolean);
+    if (types.includes("fallback_estimate")) {
+      data.source_type = "fallback_estimate";
+    } else if (types.includes("estimated_common_food")) {
+      data.source_type = "estimated_common_food";
+    } else if (types.includes("ai_search")) {
+      data.source_type = "ai_search";
+    } else if (types.includes("user_input")) {
+      data.source_type = "user_input";
+    } else {
+      data.source_type = "estimated_common_food";
+    }
+  }
+
+  if (!data.assumptions || !Array.isArray(data.assumptions)) {
+    data.assumptions = [];
+  }
+
+  // Populate overall assumptions from food items
+  data.detected_foods.forEach((food: any) => {
+    if (food.assumptions && Array.isArray(food.assumptions)) {
+      food.assumptions.forEach((ass: string) => {
+        if (!data.assumptions.includes(ass)) {
+          data.assumptions.push(ass);
+        }
+      });
+    }
+  });
+
+  // Top level kopi hitam checking to double safeguard protein 0g
+  const matchesKopiHitamTopLevel = (
+    mealNameLower.includes("kopi hitam") || 
+    mealNameLower.includes("americano") || 
+    mealNameLower.includes("long black") || 
+    mealNameLower.includes("kopi gula aren") || 
+    mealNameLower.includes("kopi hitam gula aren")
+  ) && !(
+    mealNameLower.includes("susu") || 
+    mealNameLower.includes("milk") || 
+    mealNameLower.includes("creamer") || 
+    mealNameLower.includes("cream") || 
+    mealNameLower.includes("whey") || 
+    mealNameLower.includes("protein") || 
+    mealNameLower.includes("gainer")
+  );
+
+  if (matchesKopiHitamTopLevel) {
+    data.total_protein_g = 0;
+    if (!data.assumptions.includes("Kopi hitam tanpa susu/creamer diasumsikan protein 0g.")) {
+      data.assumptions.push("Kopi hitam tanpa susu/creamer diasumsikan protein 0g.");
+    }
+  }
+
+  if (data.needs_clarification === undefined) {
+    data.needs_clarification = data.detected_foods.some((f: any) => f.needs_clarification);
+  }
+
+  return data;
+}
+
+// --- API Endpoints ---
 // 1. Food Photo Scanner Endpoint
 app.post('/api/gemini/analyze-food', async (req, res) => {
   try {
@@ -99,6 +344,10 @@ ATURAN GIZI & PENGAMANAN PENTING (DIKECUALIKAN & KHUSUS):
 Aturan Tambahan:
 - Beritahu pengguna jika tingkat keyakinan porsi atau bahan di gambar rendah, nyatakan lewat tingkat konformasi "low", dan minta pengguna untuk menyesuaikannya porsi tersebut.
 - Jangan mengklaim tingkat akurasi 100% karena ini murni berbasis analisis gambar cerdas (tampilkan "estimasi" bukan kepastian).
+- Isi metadata "source_type", "assumptions", dan "needs_clarification" pada level item (detected_foods) dan root sesuai kondisi analisis:
+  - source_type: "user_input" (jika detail didikte langsung oleh user), "estimated_common_food" (makanan umum Indonesia, porsi diestimasi dari gambar), "ai_search" (produk branded/franchise/minuman kemasan berdasarkan prior knowledge/search AI), atau "fallback_estimate" (data sangat buram/tidak jelas).
+  - assumptions: daftar asumsi eksplisit (array string), contoh "Nasi diasumsikan 150g.", "Gula aren kopi diasumsikan 12g."
+  - needs_clarification: boolean, set ke true jika data kurang meyakinkan dan butuh klarifikasi user.
 - Kembalikan response dalam bentuk structured JSON sesuai schema yang telah ditentukan.`;
 
     const response = await ai.models.generateContent({
@@ -127,7 +376,10 @@ Aturan Tambahan:
                   calories: { type: Type.NUMBER, description: 'Estimasi kalori' },
                   carbs_g: { type: Type.NUMBER, description: 'Estimasi karbohidrat dalam gram' },
                   fat_g: { type: Type.NUMBER, description: 'Estimasi lemak dalam gram' },
-                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' }
+                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' },
+                  source_type: { type: Type.STRING, description: '"user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate"' },
+                  assumptions: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Asumsi porsi atau bahan' },
+                  needs_clarification: { type: Type.BOOLEAN, description: 'Klarifikasi porsi/bahan' }
                 },
                 required: ['name', 'estimated_portion', 'protein_g', 'calories', 'carbs_g', 'fat_g', 'confidence']
               }
@@ -138,7 +390,10 @@ Aturan Tambahan:
             total_fat_g: { type: Type.NUMBER, description: 'Total lemak dalam gram' },
             confidence: { type: Type.STRING, description: 'Tingkat keyakinan deteksi keseluruhan: "low", "medium", atau "high"' },
             short_feedback: { type: Type.STRING, description: 'Masukan singkat, santai dan ramah tentang makanan ini dalam Bahasa Indonesia.' },
-            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' }
+            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' },
+            source_type: { type: Type.STRING, description: '"user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate"' },
+            assumptions: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Asumsi utama analisis hidangan' },
+            needs_clarification: { type: Type.BOOLEAN, description: 'Butuh klarifikasi keseluruhan' }
           },
           required: ['meal_name', 'detected_foods', 'total_protein_g', 'total_calories', 'total_carbs_g', 'total_fat_g', 'confidence', 'short_feedback', 'lean_bulk_advice']
         }
@@ -146,7 +401,7 @@ Aturan Tambahan:
     });
 
     const parsedData = JSON.parse(response.text || '{}');
-    return res.json(parsedData);
+    return res.json(applyNutritionGuardrails(parsedData));
 
   } catch (error: any) {
     console.error('Error analyzing food image:', error);
@@ -194,6 +449,10 @@ ATURAN GIZI & PENGAMANAN PENTING (DIKECUALIKAN & KHUSUS):
 Aturan Tambahan:
 - Berikan penanda "high" pada confidence karena input teks merupakan konfirmasi langsung dari pengguna tentang apa yang dimakannya.
 - Jangan mengklaim tingkat akurasi 100% karena ini murni berbasis analisis deskripsi teks pintar.
+- Isi metadata "source_type", "assumptions", dan "needs_clarification" pada level item (detected_foods) dan root sesuai kondisi analisis:
+  - source_type: "user_input" (jika detail didikte langsung oleh user), "estimated_common_food" (makanan umum Indonesia, porsi diestimasi dari teks), "ai_search" (produk branded/franchise/minuman kemasan berdasarkan prior knowledge/search AI), atau "fallback_estimate" (data sangat tidak jelas).
+  - assumptions: daftar asumsi eksplisit (array string), contoh "Nasi diasumsikan 150g.", "Gula aren kopi diasumsikan 12g."
+  - needs_clarification: boolean, set ke true jika data kurang meyakinkan dan butuh klarifikasi user.
 - Kembalikan response dalam bentuk structured JSON sesuai schema yang telah ditentukan.`;
 
     const response = await ai.models.generateContent({
@@ -219,7 +478,10 @@ Aturan Tambahan:
                   calories: { type: Type.NUMBER, description: 'Estimasi kalori' },
                   carbs_g: { type: Type.NUMBER, description: 'Estimasi karbohidrat dalam gram' },
                   fat_g: { type: Type.NUMBER, description: 'Estimasi lemak dalam gram' },
-                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' }
+                  confidence: { type: Type.STRING, description: 'Harus "low", "medium", atau "high"' },
+                  source_type: { type: Type.STRING, description: '"user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate"' },
+                  assumptions: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Asumsi porsi atau bahan' },
+                  needs_clarification: { type: Type.BOOLEAN, description: 'Klarifikasi porsi/bahan' }
                 },
                 required: ['name', 'estimated_portion', 'protein_g', 'calories', 'carbs_g', 'fat_g', 'confidence']
               }
@@ -230,7 +492,10 @@ Aturan Tambahan:
             total_fat_g: { type: Type.NUMBER, description: 'Total lemak dalam gram' },
             confidence: { type: Type.STRING, description: 'Tingkat keyakinan deteksi keseluruhan: "low", "medium", atau "high"' },
             short_feedback: { type: Type.STRING, description: 'Masukan singkat, santai dan ramah tentang makanan ini dalam Bahasa Indonesia.' },
-            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' }
+            lean_bulk_advice: { type: Type.STRING, description: 'Saran porsi tambahan atau suplemen pendukung spesifik untuk program lean bulk (misalnya tambah telur setengah matang atau kurangi karbo berlebih) dalam Bahasa Indonesia.' },
+            source_type: { type: Type.STRING, description: '"user_input" | "estimated_common_food" | "ai_search" | "fallback_estimate"' },
+            assumptions: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Asumsi utama analisis hidangan' },
+            needs_clarification: { type: Type.BOOLEAN, description: 'Butuh klarifikasi keseluruhan' }
           },
           required: ['meal_name', 'detected_foods', 'total_protein_g', 'total_calories', 'total_carbs_g', 'total_fat_g', 'confidence', 'short_feedback', 'lean_bulk_advice']
         }
@@ -238,7 +503,7 @@ Aturan Tambahan:
     });
 
     const parsedData = JSON.parse(response.text || '{}');
-    return res.json(parsedData);
+    return res.json(applyNutritionGuardrails(parsedData));
 
   } catch (error: any) {
     console.error('Error analyzing food text:', error);
