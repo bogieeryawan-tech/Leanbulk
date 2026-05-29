@@ -4,24 +4,29 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
-import { ChatMessage } from '../types';
+import { ChatMessage, UserSettings, DailyLog } from '../types';
 import { X, MessageSquare, Send, Sparkles, User, Brain, AlertCircle } from 'lucide-react';
 
 interface AICoachModalProps {
+  settings: UserSettings | null;
+  todayLog: DailyLog;
   onClose: () => void;
+  initialPrompt?: string;
 }
 
-export default function AICoachModal({ onClose }: AICoachModalProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'model',
-      parts: [
-        {
-          text: 'Halo Bro! Saya adalah Lean Bulk AI Coach pribadimu. 💪\n\nDengan tinggi badanmu 168cm dan berat 58kg hari ini, fokus kita adalah menaikkan massa otot secara optimal tanpa menumpuk lemak di perut (bulking bersih!). Saya tahu persediaan suplemenmu (Platinum Whey & Gain Mass) serta alat yang kamu miliki (Dumbbell 3, 6kg, dan pull-up bar).\n\nAda keluhan latihan atau nutrisi yang mau didiskusikan hari ini?'
-        }
-      ]
+export default function AICoachModal({ settings, todayLog, onClose, initialPrompt }: AICoachModalProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    let greeting = 'Halo Bro! Saya adalah Lean Bulk AI Coach pribadimu. 💪\n\nAda yang bisa saya bantu hari ini?';
+    if (settings) {
+      greeting = `Halo ${settings.profile.nickname || 'Bro'}! Saya adalah Lean Bulk AI Coach pribadimu. 💪\n\nDengan berat kamu sekarang ${settings.profile.current_weight_kg} kg dan target ${settings.goal.target_weight_kg} kg, fokus kita adalah mencapai tujuanmu secara optimal. \n\nAda keluhan latihan atau nutrisi yang mau didiskusikan hari ini?`;
     }
-  ]);
+    return [
+      {
+        role: 'model',
+        parts: [{ text: greeting }]
+      }
+    ];
+  });
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -36,10 +41,6 @@ export default function AICoachModal({ onClose }: AICoachModalProps) {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -61,7 +62,9 @@ export default function AICoachModal({ onClose }: AICoachModalProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: [...messages, userMessage]
+          messages: [...messages, userMessage],
+          settings,
+          todayLog
         }),
       });
 
@@ -91,6 +94,19 @@ export default function AICoachModal({ onClose }: AICoachModalProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const hasSentInitialPrompt = useRef(false);
+
+  useEffect(() => {
+    if (initialPrompt && !hasSentInitialPrompt.current) {
+        hasSentInitialPrompt.current = true;
+        handleSendMessage(initialPrompt);
+    }
+  }, [initialPrompt]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">

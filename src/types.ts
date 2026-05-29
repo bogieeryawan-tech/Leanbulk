@@ -39,17 +39,33 @@ export interface WeightWaistLog {
   waist?: number;  // cm
 }
 
+export interface WorkoutExercise {
+  name: string;
+  category: "main" | "support" | "core" | "mobility" | "bonus";
+  isCompleted: boolean;
+  isSkipped: boolean;
+  skipReason?: "capek" | "waktu_habis" | "sakit" | "tidak_sempat" | "lainnya" | string;
+  weight?: "bodyweight" | "3kg" | "6kg" | "custom";
+  sets?: number;
+  reps?: number;
+  durationSeconds?: number;
+  difficulty?: "easy" | "medium" | "hard" | "failed" | "";
+}
+
 export interface WorkoutLog {
-  templateType: "shoulder_posture" | "chest_upper" | "core_padel" | "custom";
+  templateType: "plan_a" | "plan_b" | "recovery" | "custom";
+  workoutScore: "none" | "mini_session" | "light" | "minimum_effective" | "solid" | "full";
   isDone: boolean;
   difficulty: "easy" | "medium" | "hard" | "failed" | "";
   notes: string;
+  exercises: WorkoutExercise[];
 }
 
 export interface DailyLog {
   date: string; // YYYY-MM-DD
   meals: FoodScanResult[];
   supplements: SupplementLog[];
+  activities?: { id: string; time: string; name: string; duration_minutes: number; calories_burned: number; }[];
   weightWaist?: WeightWaistLog;
   workout?: WorkoutLog;
   summaryText?: string; // Cache the Gemini daily summary

@@ -17,7 +17,9 @@ import DataManagement from './components/DataManagement';
 import OnboardingWizard from './components/OnboardingWizard';
 import SettingsModal from './components/SettingsModal';
 import AIGoalAdvisorModal from './components/AIGoalAdvisorModal';
-import { Sparkles, Brain, Scale, Dumbbell, Zap, RefreshCw, ChevronLeft, ChevronRight, User } from 'lucide-react';
+import InstallPwaModal from './components/InstallPwaModal';
+import { ActivityLoggerModal } from './components/ActivityLoggerModal';
+import { Sparkles, Brain, Scale, Dumbbell, Zap, RefreshCw, ChevronLeft, ChevronRight, User, Smartphone } from 'lucide-react';
 
 
 // Generates 5 days of realistic mock seed data for a 58kg male beginner to show graph trends
@@ -41,7 +43,7 @@ const SEED_DATA: DailyLog[] = [
       { id: 'supp-1', time: '08:15', type: 'platinum_whey', name: 'L-Men Platinum (1 Scoop)', protein_g: 25, calories: 120 }
     ],
     weightWaist: { weight: 58.0, waist: 76.0 },
-    workout: { templateType: 'shoulder_posture', isDone: true, difficulty: 'medium', notes: 'Bagus, postur tegak.' }
+    workout: { templateType: 'plan_a', workoutScore: 'solid', isDone: true, difficulty: 'medium', notes: 'Bagus, postur tegak.', exercises: [] }
   },
   {
     date: '2026-05-23',
@@ -62,7 +64,7 @@ const SEED_DATA: DailyLog[] = [
       { id: 'supp-2', time: '17:30', type: 'gain_mass_half', name: 'L-Men Gain Mass (1/2 Serving)', protein_g: 11, calories: 150 }
     ],
     weightWaist: { weight: 58.1, waist: 76.0 },
-    workout: { templateType: 'chest_upper', isDone: true, difficulty: 'hard', notes: 'Push-up terasa menantang.' }
+    workout: { templateType: 'plan_b', workoutScore: 'solid', isDone: true, difficulty: 'hard', notes: 'Push-up terasa menantang.', exercises: [] }
   },
   {
     date: '2026-05-24',
@@ -83,7 +85,7 @@ const SEED_DATA: DailyLog[] = [
       { id: 'supp-3', time: '10:00', type: 'platinum_whey', name: 'L-Men Platinum (1 Scoop)', protein_g: 25, calories: 120 }
     ],
     weightWaist: { weight: 58.2, waist: 76.1 },
-    workout: { templateType: 'core_padel', isDone: true, difficulty: 'easy', notes: 'Core plank terasa kuat.' }
+    workout: { templateType: 'recovery', workoutScore: 'light', isDone: true, difficulty: 'easy', notes: 'Core plank terasa kuat.', exercises: [] }
   },
   {
     date: '2026-05-25',
@@ -104,7 +106,7 @@ const SEED_DATA: DailyLog[] = [
       { id: 'supp-4', time: '20:15', type: 'platinum_whey', name: 'L-Men Platinum (1 Scoop)', protein_g: 25, calories: 120 }
     ],
     weightWaist: { weight: 58.3, waist: 76.1 },
-    workout: { templateType: 'shoulder_posture', isDone: false, difficulty: '', notes: 'Hari istirahat.' }
+    workout: { templateType: 'plan_a', workoutScore: 'none', isDone: false, difficulty: '', notes: 'Hari istirahat.', exercises: [] }
   },
   {
     date: '2026-05-26',
@@ -126,7 +128,7 @@ const SEED_DATA: DailyLog[] = [
       { id: 'supp-6', time: '15:20', type: 'gain_mass_half', name: 'L-Men Gain Mass (1/2 Serving)', protein_g: 11, calories: 150 }
     ],
     weightWaist: { weight: 58.4, waist: 76.2 },
-    workout: { templateType: 'chest_upper', isDone: true, difficulty: 'medium', notes: 'Gerakan dumbbell row mulus.' }
+    workout: { templateType: 'plan_a', workoutScore: 'solid', isDone: true, difficulty: 'medium', notes: 'Gerakan dumbbell row mulus.', exercises: [] }
   }
 ];
 
@@ -168,9 +170,12 @@ export default function App() {
   const [weightWaistOpen, setWeightWaistOpen] = useState(false);
   const [workoutOpen, setWorkoutOpen] = useState(false);
   const [coachOpen, setCoachOpen] = useState(false);
+  const [coachInitialPrompt, setCoachInitialPrompt] = useState<string | undefined>(undefined);
   const [progressOpen, setProgressOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [goalAdvisorOpen, setGoalAdvisorOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   // Initialize and load logs & body progress from localStorage
   useEffect(() => {
@@ -287,11 +292,30 @@ export default function App() {
     updateTodayLog({ supplements: freshSupps });
   };
 
+  const handleDeleteActivity = (id: string) => {
+    const freshActivities = (todayLog.activities || []).filter(a => a.id !== id);
+    updateTodayLog({ activities: freshActivities });
+  };
+
   // 3. Weight/Waist logs
   const handleSaveWeightWaist = (weight: number, waist: number) => {
     updateTodayLog({
       weightWaist: { weight, waist }
     });
+    
+    // Also update current profile settings if they exist
+    if (settings) {
+       const newSettings = {
+         ...settings,
+         profile: {
+           ...settings.profile,
+           current_weight_kg: weight,
+           current_waist_cm: waist
+         }
+       };
+       setSettings(newSettings);
+       localStorage.setItem('lean_bulk_settings', JSON.stringify(newSettings));
+    }
   };
 
   // 4. Workout checklist logger
@@ -301,11 +325,13 @@ export default function App() {
 
   const handleToggleWorkoutDone = () => {
     const currentWorkout = todayLog.workout || {
-      templateType: 'shoulder_posture',
+      templateType: 'plan_a',
+      workoutScore: 'none',
       isDone: false,
       difficulty: '',
-      notes: ''
-    };
+      notes: '',
+      exercises: []
+    } as any;
     updateTodayLog({
       workout: {
         ...currentWorkout,
@@ -396,11 +422,22 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 backdrop-blur-md border border-white/10 rounded-full cursor-pointer hover:bg-white/10 transition" onClick={() => setSettingsOpen(true)}>
-            <User className="w-3.5 h-3.5 text-amber-500" />
-            <span className="text-[10px] text-slate-300 font-bold font-mono">
-              {settings ? `${settings.profile.current_weight_kg}kg / ${settings.profile.height_cm}cm` : 'Setup'}
-            </span>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setInstallOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-0.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-full cursor-pointer text-purple-400 text-[9px] font-black uppercase tracking-wider transition shrink-0"
+              title="Pasang Aplikasi di HP"
+            >
+              <Smartphone className="w-3 h-3 text-purple-400" />
+              Install App
+            </button>
+
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 backdrop-blur-md border border-white/10 rounded-full cursor-pointer hover:bg-white/10 transition" onClick={() => setSettingsOpen(true)}>
+              <User className="w-3.5 h-3.5 text-amber-500" />
+              <span className="text-[10px] text-slate-300 font-bold font-mono">
+                {settings ? `${settings.profile.current_weight_kg}kg / ${settings.profile.height_cm}cm` : 'Setup'}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -447,10 +484,15 @@ export default function App() {
           onOpenSupplements={() => setSupplementsOpen(true)}
           onOpenWeightWaist={() => setWeightWaistOpen(true)}
           onOpenWorkout={() => setWorkoutOpen(true)}
-          onOpenCoach={() => setCoachOpen(true)}
+          onOpenActivity={() => setActivityOpen(true)}
+          onOpenCoach={(prompt?: string) => {
+             setCoachInitialPrompt(prompt);
+             setCoachOpen(true);
+          }}
           onOpenProgressCheck={() => setProgressOpen(true)}
           onDeleteMeal={handleDeleteMeal}
           onDeleteSupplement={handleDeleteSupplement}
+          onDeleteActivity={handleDeleteActivity}
           onToggleWorkoutDone={handleToggleWorkoutDone}
           onAIGoalAdvisor={() => setGoalAdvisorOpen(true)}
         />
@@ -466,6 +508,13 @@ export default function App() {
       </main>
 
       {/* Overlay modal views */}
+      <ActivityLoggerModal
+        isOpen={activityOpen}
+        onClose={() => setActivityOpen(false)}
+        dayLog={todayLog}
+        onUpdateDay={(log) => updateTodayLog(log)}
+      />
+
       {scannerOpen && (
         <FoodScannerModal
           onClose={() => setScannerOpen(false)}
@@ -501,7 +550,13 @@ export default function App() {
 
       {coachOpen && (
         <AICoachModal
-          onClose={() => setCoachOpen(false)}
+          settings={settings}
+          todayLog={todayLog}
+          initialPrompt={coachInitialPrompt}
+          onClose={() => {
+            setCoachOpen(false);
+            setCoachInitialPrompt(undefined);
+          }}
         />
       )}
 
@@ -540,7 +595,7 @@ export default function App() {
         />
       )}
 
-      {goalAdvisorOpen && settings && (
+       {goalAdvisorOpen && settings && (
         <AIGoalAdvisorModal
           settings={settings}
           logs={logs}
@@ -570,6 +625,10 @@ export default function App() {
              setGoalAdvisorOpen(false);
           }}
         />
+      )}
+
+      {installOpen && (
+        <InstallPwaModal onClose={() => setInstallOpen(false)} />
       )}
 
     </div>

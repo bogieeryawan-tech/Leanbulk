@@ -127,9 +127,9 @@ export default function SettingsModal({ settings, onClose, onSave }: SettingsMod
              <div>
                 <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Preferensi Timeline</label>
                 <select value={formData.goal.timeline_preference} onChange={e => setNestedGoal('timeline_preference', e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3 text-white text-sm outline-none text-center">
-                  <option value="santai">Santai</option>
+                  <option value="relaxed">Santai</option>
                   <option value="normal">Normal</option>
-                  <option value="agresif">Cepat / Agresif</option>
+                  <option value="aggressive">Cepat / Agresif</option>
                 </select>
              </div>
           </div>

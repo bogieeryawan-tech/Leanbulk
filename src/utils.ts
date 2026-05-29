@@ -6,39 +6,53 @@
 import { DailyLog, WorkoutLog } from './types';
 
 export const WORKOUT_TEMPLATES = {
-  shoulder_posture: {
-    templateType: 'shoulder_posture' as const,
-    title: 'Shoulder & Posture',
-    description: 'Postur tegak, bahu lebar kokoh menggunakan dumbbell ringan & pull-up bar.',
+  plan_a: {
+    templateType: 'plan_a' as const,
+    title: 'Hari A - Upper Body / Postur',
+    description: 'Fokus dada, bahu, punggung, postur tegap.',
     exercises: [
-      { name: 'Lateral Raise', description: 'Gunakan dumbbell 3kg atau 6kg, fokus tempo lambat (3 detik turun)' },
-      { name: 'Shoulder Press', description: 'Dumbbell 6kg, dorong ke atas lambat, jaga otot core tetap kencang' },
-      { name: 'Wall Slide', description: 'Tanpa beban, sandarkan punggung ke tembok, gerakkan tangan naik turun' },
-      { name: 'Chin Tuck', description: 'Menarik dagu ke dalam untuk memperbaiki forward head posture' },
-      { name: 'Dead Hang', description: 'Gantung di pull-up bar selama 30-60 detik untuk mendekompresir tulang belakang' }
+      { name: 'Dead Hang (Wajib)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 3, durationSeconds: 20 },
+      { name: 'Scapular Pull-up (Wajib)', category: 'main' as const, defaultWeight: 'bodyweight' as const, sets: 3, reps: 8 },
+      { name: 'Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Side Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Dumbbell Floor Press', category: 'main' as const, defaultWeight: '6kg' as const, sets: 3, reps: 15 },
+      { name: 'One-Arm Dumbbell Row', category: 'main' as const, defaultWeight: '6kg' as const, sets: 3, reps: 15 },
+      { name: 'Dumbbell Shoulder Press', category: 'main' as const, defaultWeight: '3kg' as const, sets: 3, reps: 12 },
+      { name: 'Lateral Raise', category: 'support' as const, defaultWeight: '3kg' as const, sets: 3, reps: 20 },
+      { name: 'Rear Delt Fly', category: 'support' as const, defaultWeight: '3kg' as const, sets: 3, reps: 15 },
+      { name: 'Abs Roll (kneeling)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 3, reps: 8 }
     ]
   },
-  chest_upper: {
-    templateType: 'chest_upper' as const,
-    title: 'Chest & Upper Body',
-    description: 'Fokus pada otot dada dan punggung atas menggunakan dumbbell & matras.',
+  plan_b: {
+    templateType: 'plan_b' as const,
+    title: 'Hari B - Lower Body / Core',
+    description: 'Fokus kaki atletis, core kuat, badan proporsional.',
     exercises: [
-      { name: 'Floor Chest Press', description: 'Berbaring di matras, dorong dumbbell 6kg, rasakan kontraksi dada' },
-      { name: 'Dumbbell Row', description: 'Gunakan dumbbell 6kg bersandar pada lutut, tarik ke arah pinggul' },
-      { name: 'Push-up Progression', description: 'Push-up biasa atau incline push-up hingga mendekati gagal otot' },
-      { name: 'Scapular Pull-up', description: 'Menggantung di bar, lalu aktifkan otot belikat naik-turun tanpa menekuk siku' }
+      { name: 'Dead Hang (Wajib)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 3, durationSeconds: 20 },
+      { name: 'Scapular Pull-up (Wajib)', category: 'main' as const, defaultWeight: 'bodyweight' as const, sets: 3, reps: 8 },
+      { name: 'Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Side Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Goblet Squat', category: 'main' as const, defaultWeight: '6kg' as const, sets: 3, reps: 15 },
+      { name: 'Dumbbell Romanian Deadlift', category: 'main' as const, defaultWeight: '6kg' as const, sets: 3, reps: 15 },
+      { name: 'Reverse Lunge / Split Squat', category: 'support' as const, defaultWeight: '3kg' as const, sets: 3, reps: 12 },
+      { name: 'Calf Raise', category: 'support' as const, defaultWeight: '6kg' as const, sets: 3, reps: 25 },
+      { name: 'Dumbbell Curl', category: 'support' as const, defaultWeight: '6kg' as const, sets: 2, reps: 15 },
+      { name: 'Triceps Ext / Close-Grip Press', category: 'support' as const, defaultWeight: '6kg' as const, sets: 2, reps: 15 },
+      { name: 'Abs Roll (kneeling ringan)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, reps: 5 }
     ]
   },
-  core_padel: {
-    templateType: 'core_padel' as const,
-    title: 'Core & Padel Support',
-    description: 'Latihan penguatan core, mobilitas, dan keseimbangan kaki untuk padel/gerak gesit.',
+  recovery: {
+    templateType: 'recovery' as const,
+    title: 'Recovery / Bonus 3 Menit',
+    description: 'Bahu lebih rileks, terbuka, dan tidak terangkat.',
     exercises: [
-      { name: 'Plank', description: 'Tahan tubuh lurus di atas matras selama 45-60 detik' },
-      { name: 'Abs Roller / Crunch', description: 'Kontraksi perut secara perlahan di atas matras' },
-      { name: 'Split Squat', description: 'Genggam dumbbell 3kg di tiap tangan, tekuk lutut bergantian' },
-      { name: 'Calf Raise', description: 'Jinjit di lantai datar bergantian untuk memperkuat pergelangan kaki' },
-      { name: 'Hip Flexor Stretch', description: 'Peregangan area pinggul di matras untuk kelenturan' }
+      { name: 'Dead Hang (Wajib)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 3, durationSeconds: 20 },
+      { name: 'Scapular Pull-up (Wajib)', category: 'main' as const, defaultWeight: 'bodyweight' as const, sets: 3, reps: 8 },
+      { name: 'Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Side Plank (Wajib)', category: 'core' as const, defaultWeight: 'bodyweight' as const, sets: 2, durationSeconds: 20 },
+      { name: 'Wall Slide (Bonus)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 1, reps: 10 },
+      { name: 'Chin Tuck (Bonus)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 1, reps: 10 },
+      { name: 'Hip Flexor Stretch (Bonus)', category: 'mobility' as const, defaultWeight: 'bodyweight' as const, sets: 1, durationSeconds: 30 }
     ]
   }
 };

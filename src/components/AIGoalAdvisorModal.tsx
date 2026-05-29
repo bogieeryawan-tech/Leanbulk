@@ -22,7 +22,9 @@ export default function AIGoalAdvisorModal({ settings, logs, bodyProgressHistory
     try {
       setLoading(true);
 
-      const recentLogs = logs.slice(0, 14);
+      const sortedLogs = [...logs].sort((a, b) => b.date.localeCompare(a.date));
+      const recentLogs = sortedLogs.slice(0, 14);
+      
       let avgWeight = 0;
       let validWeights = 0;
       recentLogs.forEach(l => {
@@ -33,12 +35,50 @@ export default function AIGoalAdvisorModal({ settings, logs, bodyProgressHistory
       });
       if (validWeights > 0) avgWeight /= validWeights;
 
+      // Calculate waist trend 14 days
+      let waistTrendStr = "Stabil";
+      let latestWaist = 0;
+      let oldestWaist = 0;
+      const waistLogs = recentLogs.filter(l => l.weightWaist?.waist).map(l => l.weightWaist!.waist);
+      if (waistLogs.length >= 2) {
+         latestWaist = waistLogs[0];
+         oldestWaist = waistLogs[waistLogs.length - 1];
+         if (latestWaist > oldestWaist + 1) waistTrendStr = "Naik cepat";
+         else if (latestWaist < oldestWaist - 1) waistTrendStr = "Turun";
+      }
+
+      // Calculate protein avg 7 days
+      const last7Logs = sortedLogs.slice(0, 7);
+      let totalProtein7 = 0;
+      let validProteinDays = 0;
+      let workoutDoneCount = 0;
+      last7Logs.forEach(l => {
+         const foodPro = l.meals.reduce((sum, m) => sum + m.total_protein_g, 0);
+         const suppPro = l.supplements.reduce((sum, s) => sum + s.protein_g, 0);
+         if (foodPro + suppPro > 0) {
+            totalProtein7 += (foodPro + suppPro);
+            validProteinDays++;
+         }
+         if (l.workout?.isDone) {
+            workoutDoneCount++;
+         }
+      });
+      const avgProtein7 = validProteinDays ? (totalProtein7 / validProteinDays) : 0;
+      
+      const latestBodyProgress = bodyProgressHistory.length > 0
+        ? [...bodyProgressHistory].sort((a, b) => b.date.localeCompare(a.date))[0]
+        : null;
+
       const response = await fetch('/api/gemini/analyze-goal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings,
-          avgWeight
+          avgWeight,
+          waistTrendStr,
+          avgProtein7,
+          workoutDoneCount,
+          latestBodyProgress
         })
       });
 

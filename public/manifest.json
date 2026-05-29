@@ -1,0 +1,19 @@
+{
+  "name": "Lean Bulk AI Tracker",
+  "short_name": "Lean Bulk AI",
+  "description": "Asisten Personal Trainer & Tracker nutrisi/latihan mandiri khusus Lean Bulk di Indonesia.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0614",
+  "theme_color": "#0a0614",
+  "orientation": "portrait",
+  "categories": ["fitness", "health", "sports"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 256x256 384x384 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

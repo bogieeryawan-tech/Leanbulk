@@ -393,15 +393,14 @@ export default function FoodScannerModal({ onClose, onSaveMeal }: FoodScannerMod
                       <Camera className="w-7 h-7" />
                     </div>
                     <div className="text-center">
-                      <span className="block text-xs font-bold text-slate-300">Ambil Foto / Pilih Gambar</span>
-                      <span className="text-[10px] text-slate-500 mt-1 block">Mendukung Kamera HP & drag-and-drop</span>
+                      <span className="block text-xs font-bold text-slate-300">Ambil Foto / Pilih dari Album</span>
+                      <span className="text-[10px] text-slate-500 mt-1 block">Mendukung Kamera, Galeri HP, & drag-and-drop</span>
                     </div>
                   </>
                 )}
                 <input 
                   type="file" 
                   accept="image/*" 
-                  capture="environment"
                   ref={fileInputRef} 
                   onChange={handleFileChange} 
                   className="hidden" 

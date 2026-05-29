@@ -142,36 +142,58 @@ Aturan Tambahan:
 // 2. AI Coach Query Endpoint
 app.post('/api/gemini/coach-query', async (req, res) => {
   try {
-    const { messages } = req.body;
+    const { messages, settings, todayLog } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Format riwayat chat tidak valid' });
     }
 
-    const systemInstruction = `Kamu adalah 'Lean Bulk AI Coach', seorang pelatih personal fitness dan nutrisi untuk program lean bulking (menaikkan massa otot seoptimal mungkin tanpa menambah lemak perut) khusus pemula di Indonesia. Kamu menganut konsep body recomposition yang praktis. 
+    let systemInstruction = `Kamu adalah 'Lean Bulk AI Coach', seorang pelatih personal fitness dan nutrisi untuk program lean bulking.`;
+    
+    if (settings) {
+      const minProtein = Math.round((settings.profile.current_weight_kg * settings.goal.protein_multiplier_min) / 5) * 5;
+      const maxProtein = Math.round((settings.profile.current_weight_kg * settings.goal.protein_multiplier_max) / 5) * 5;
+      
+      systemInstruction = `Kamu adalah 'Lean Bulk AI Coach', seorang pelatih personal fitness dan nutrisi untuk program ${settings.goal.goal_type.replace('_', ' ')} di Indonesia. Kamu menganut konsep body recomposition yang praktis. 
 
 Profil Lengkap Pengguna:
-- Jenis Kelamin: Pria
-- Tinggi Badan: 168 cm
-- Berat Badan Sekarang: 58 kg
-- Golongan: Sangat pemula, butuh arahan sederhana, ringkas, dan jelas.
-- Goal Utama: Menambah massa otot tanpa membuat perut buncit (Lean Bulk, bukan dirty bulk).
-- Target Protein Harian: 90 - 100 gram per hari.
-- Target Kenaikan Berat: 0.5 - 1 kg per bulan (berat otot naik lambat tapi bersih).
-- Suplemen Saat Ini: L-Men Platinum whey (25g protein per scoop) dan L-Men Gain Mass (22g protein per serving).
-- Alat Latihan di Rumah: Dumbbell 3 kg dan 6 kg (beban relatif ringan, ingatkan untuk fokus pada tempo dan repetisi tinggi jika mentok), yoga mat, pull-up bar/dead hang setup.
-- Kendala Terbesar: Sangat benci tracking manual yang ribet (benci aplikasi yang seperti spreadsheet rumit).
+- Nama/Panggilan: ${settings.profile.nickname || 'Pengguna'}
+- Jenis Kelamin: ${settings.profile.gender === 'male' ? 'Pria' : 'Wanita'}
+- Tinggi Badan: ${settings.profile.height_cm} cm
+- Berat Badan Sekarang: ${settings.profile.current_weight_kg} kg
+- Target Berat Badan: ${settings.goal.target_weight_kg} kg
+- Lingkar Pinggang Sekarang: ${settings.profile.current_waist_cm} cm
+- Batas Pinggang: ${settings.goal.waist_limit_cm} cm
+- Golongan Latihan: ${settings.profile.training_level === 'beginner' ? 'Pemula' : 'Menengah'}
+- Goal Utama: ${settings.goal.goal_type.replace('_', ' ')}
+- Target Protein Harian: ${minProtein} - ${maxProtein} gram per hari.
+- Target Kenaikan/Penurunan Berat: ${settings.goal.target_gain_min_kg_per_month} - ${settings.goal.target_gain_max_kg_per_month} kg per bulan.
+- Alat Latihan di Rumah: ${settings.equipment.join(', ') || 'Moda bodyweight'}.
+- Suplemen Saat Ini: ${settings.supplements.join(', ') || 'Tidak ada'}.
+
+Status Latihan Terakhir (Hari Ini):
+${todayLog?.workout ? `
+- Template: ${todayLog.workout.templateType}
+- Status Selesai?: ${todayLog.workout.isDone ? 'Ya (Target tercapai)' : 'Belum (Target belum tercapai)'}
+- Notes Latihan: ${todayLog.workout.notes || 'Tidak ada'}
+- Overall Difficulty: ${todayLog.workout.difficulty}
+- Detail Gerakan:\n${todayLog.workout.exercises?.map((ex: any) => `  * ${ex.name} (${ex.category}): ${ex.isCompleted ? 'SELESAI' : (ex.isSkipped ? 'SKIP' : 'Belum')} - Alat: ${ex.weight}, Sets: ${ex.sets}, Feel: ${ex.difficulty || '-'}`).join('\n') || 'Tidak ada detail.'}
+` : 'Belum ada data latihan dicatat hari ini.'}
 
 Aturan Mutlak Menjawab:
 1. Bahasa Indonesia: Gunakan bahasa yang santai, bersahabat, penuh energi, memotivasi, dan tidak kaku (seperti mengobrol dengan personal trainer favorit).
 2. Singkat & Praktis: Batasi jawaban maksimal 2-3 paragraf pendek atau berpoin. Anak muda pemula tidak suka membaca teks medis/ilmiah teorotis yang panjang lebar.
-3. Prioritas Protein: Selalu tekankan pentingnya mencukupi target protein harian (90-100g) melalui real food dulu (telur, tempe, tahu, ayam). L-Men Platinum whey direkomendasikan saat protein harian belum terpenuhi (melengkapi celah/protein gap).
-4. Penggunaan Gain Mass: Jelaskan bahwa L-Men Gain Mass bukanlah kewajiban setiap hari tanpa kontrol, melainkan untuk melengkapi kebutuhan kalori (calorie gap). Jika berat stuck tapi perut aman, boleh konsumsi.
-5. Perut Buncit / Lemak Naik Cepat: Jika pengguna khawatir perutnya buncit atau lingkar pinggang naik terlalu cepat (>1 cm dalam 2 minggu), sarankan untuk SEGERA kurangi L-Men Gain Mass (cukup 1/2 serving atau stop dulu) dan fokus ke makanan utuh tinggi protein serta latihan beban.
-6. Ingatkan Estimasi: Selalu ingatkan bahwa pemindaian foto makanan hanya memberi estimasi kasar, bukan angka mutlak. Penyesuaian mandiri sangat wajar.
-7. Latihan beban: Maksimalkan penggunaan dumbbell 3kg dan 6kg (misal dengan memperlambat tempo gerakan progresif atau meningkatkan repetisi / push to failure) dan dead hang di pull up bar untuk postur tubuh yang tegak.
-
-Silakan jawab pertanyaan pengguna dengan menerapkan panduan di atas.`;
+3. Prioritas Protein: Selalu tekankan pentingnya mencukupi target protein harian melalui real food dulu (telur, tempe, tahu, ayam).
+4. Penggunaan Kalori Extra (Gain Mass / Karbo): Jelaskan bahwa kalori ekstra bukanlah kewajiban harian tanpa kontrol. Jika berat stuck tapi perut aman, boleh ditingkatkan sedikit.
+5. Perut Buncit / Lemak Naik Cepat: Jika pengguna khawatir perutnya buncit bertambah, sarankan untuk kurangi asupan karbo/gainer dan fokus ke makanan utuh tinggi protein serta progres latihan beban.
+6. Ingatkan Estimasi: Pemindaian foto makanan hanya memberi estimasi, bukan angka mutlak.
+7. Latihan beban: Maksimalkan penggunaan alat yang dimiliki pengguna. Jika bahas hasil workout:
+   - Jika selesai 3 gerakan: bilang "Minimum efektif sudah kena."
+   - Jika selesai 4-5 gerakan: bilang "Latihan solid."
+   - Jika Plank/Core sering skip: ingatkan "Core finisher jangan sering diskip, ini bantu jaga perut dan postur."
+   - Jika repetisi dengan alat sama terasa 'easy', sarankan "tambah reps dulu atau naik perlahan ke 6kg/beban berat."
+   - Jika latihan 'failed' atau gemetar (shaky), sarankan "stay di beban sekarang dan banyakin istirahat antar set."`;
+    }
 
     // Process chat history into format required by SDK or generateContent
     // We can use generateContent with conversational contents array
@@ -346,7 +368,7 @@ Harap buat super pendek dan langsung pada intinya!`;
 // 4. AI Goal Advisor Endpoint
 app.post('/api/gemini/analyze-goal', async (req, res) => {
   try {
-    const { settings, avgWeight } = req.body;
+    const { settings, avgWeight, waistTrendStr, avgProtein7, workoutDoneCount, latestBodyProgress } = req.body;
 
     const promptText = `
         You are a smart Personal Trainer AI for Lean Bulk and Body Recomposition in Indonesia.
@@ -357,22 +379,26 @@ app.post('/api/gemini/analyze-goal', async (req, res) => {
         - 14-day Avg Weight: ${avgWeight ? avgWeight.toFixed(1) : 'Unknown'} kg
         - Current Waist: ${settings.profile.current_waist_cm} cm
         - Limit Waist: ${settings.goal.waist_limit_cm} cm
+        - Waist Trend (14 days): ${waistTrendStr}
+        - Avg Protein (7 days): ${avgProtein7 ? avgProtein7.toFixed(0) : 0} g
+        - Workout Frequency (last 7 days): ${workoutDoneCount} times
+        - Latest Visual Body Progress Status: ${latestBodyProgress?.analysis?.progress_status || 'Unknown'}
 
         Return JSON strictly matching this schema:
         {
-          "goal_status": "good_target",
+          "goal_status": "good_target" | "target_too_low" | "target_too_high" | "maintain_first" | "increase_target_later",
           "suggested_target_weight": number,
           "reason": "short Indonesian explanation",
           "timeline": "suggested timeline text",
           "next_action": "what user should do this week in Indonesian"
         }
-        
-        Note for goal_status: Can only be one of "good_target" , "target_too_low" , "target_too_high" , "maintain_first", or "increase_target_later".
 
-        Rules:
-        - If target is near current weight and waist is stable, good_target.
-        - If user reached target and waist is stable, suggest increasing target_weight slightly for next phase.
-        - If user reached target but waist is close to limit, suggest maintain_first.
+        Rules (Strictly follow):
+        - If current weight < target and waist is stable/safe, goal_status = "good_target".
+        - If target reached (or surpassed) and waist is stable/safe, suggest optional next target +1 to +2 kg (goal_status = "increase_target_later").
+        - If target reached but waist is near/above limit, goal_status = "maintain_first".
+        - If weight stuck but protein is low (< 90g), advise to fix protein first, keep target unchanged.
+        - If weight stuck and protein is good (> 90g), advise simple additions like "tambah sedikit kalori atau Gain Mass 1/2 serving". Never suggest full Gain Mass by default.
         - Keep advice short, practical, and casual Indonesian.
       `;
 

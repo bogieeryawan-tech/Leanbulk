@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
-import { WorkoutLog } from '../types';
+import { useState, useEffect } from 'react';
+import { WorkoutLog, WorkoutExercise, DailyLog } from '../types';
 import { WORKOUT_TEMPLATES } from '../utils';
-import { X, Dumbbell, Award, Flame, Check, HelpCircle, Save, Calendar } from 'lucide-react';
+import { X, Dumbbell, Save, CheckCircle2, Circle, FastForward, Info, Plus } from 'lucide-react';
 
 interface WorkoutTrackerModalProps {
   onClose: () => void;
@@ -14,212 +14,298 @@ interface WorkoutTrackerModalProps {
   todayLog: DailyLog;
 }
 
-import { DailyLog } from '../types';
-
 export default function WorkoutTrackerModal({
   onClose,
   onSaveWorkout,
   todayLog
 }: WorkoutTrackerModalProps) {
   
-  const [selectedTemplate, setSelectedTemplate] = useState<"shoulder_posture" | "chest_upper" | "core_padel" | "custom">(
-    todayLog.workout?.templateType || 'shoulder_posture'
+  const [selectedTemplate, setSelectedTemplate] = useState<"plan_a" | "plan_b" | "recovery" | "custom">(
+    todayLog.workout?.templateType || 'plan_a'
   );
-  const [isDone, setIsDone] = useState<boolean>(todayLog.workout?.isDone || false);
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "failed" | "">(
-    todayLog.workout?.difficulty || ''
-  );
+  
+  const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [notes, setNotes] = useState<string>(todayLog.workout?.notes || '');
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "failed" | "">(todayLog.workout?.difficulty || '');
 
-  const handleSave = () => {
-    const log: WorkoutLog = {
-      templateType: selectedTemplate,
-      isDone,
-      difficulty,
-      notes
-    };
-    onSaveWorkout(log);
-    onClose();
+  // Load exercises when template changes
+  useEffect(() => {
+    // If the selected template matches the todayLog's template, try to load saved exercises
+    if (todayLog.workout && todayLog.workout.templateType === selectedTemplate && todayLog.workout.exercises?.length > 0) {
+       setExercises(todayLog.workout.exercises);
+    } else {
+       // Otherwise, load default template exercises
+       const template = selectedTemplate !== 'custom' ? WORKOUT_TEMPLATES[selectedTemplate] : null;
+       if (template) {
+         setExercises(template.exercises.map(ex => ({
+           name: ex.name,
+           category: ex.category,
+           isCompleted: false,
+           isSkipped: false,
+           weight: ex.defaultWeight,
+           sets: 3,
+           reps: 10,
+           difficulty: ''
+         })));
+       } else {
+         setExercises([]); // custom
+       }
+    }
+  }, [selectedTemplate, todayLog.workout]);
+
+  const updateExercise = (index: number, updates: Partial<WorkoutExercise>) => {
+    const newEx = [...exercises];
+    newEx[index] = { ...newEx[index], ...updates };
+    setExercises(newEx);
   };
 
-  const currentTemplate = selectedTemplate !== 'custom' ? WORKOUT_TEMPLATES[selectedTemplate] : null;
+  const addQuickExercise = (name: string, category: "main" | "support" | "core" | "mobility" | "bonus") => {
+    setExercises([...exercises, {
+      name,
+      category,
+      isCompleted: false,
+      isSkipped: false,
+      weight: 'bodyweight',
+      sets: 3,
+      durationSeconds: name.includes('Plank') ? 45 : undefined,
+      reps: name.includes('Plank') ? undefined : 10,
+      difficulty: ''
+    }]);
+  };
+
+  const completedCount = exercises.filter(ex => ex.isCompleted).length;
+  const isWorkoutValid = completedCount >= 1; // Can save if at least 1 exercise is done
+
+  let completionMessage = "Belum mulai.";
+  let completionColor = "text-slate-500";
+  let workoutScore: "none" | "mini_session" | "light" | "minimum_effective" | "solid" | "full" = "none";
+
+  if (completedCount >= 5) {
+     completionMessage = "Full workout! Mantap.";
+     completionColor = "text-emerald-400";
+     workoutScore = "full";
+  } else if (completedCount === 4) {
+     completionMessage = "Latihan solid hari ini.";
+     completionColor = "text-blue-400";
+     workoutScore = "solid";
+  } else if (completedCount === 3) {
+     completionMessage = "Minimum efektif sudah kena.";
+     completionColor = "text-amber-400";
+     workoutScore = "minimum_effective";
+  } else if (completedCount === 2) {
+     completionMessage = "Light workout.";
+     completionColor = "text-orange-400";
+     workoutScore = "light";
+  } else if (completedCount === 1) {
+     completionMessage = "Mini session.";
+     completionColor = "text-purple-400";
+     workoutScore = "mini_session";
+  }
+
+  const [feedbackMsg, setFeedbackMsg] = useState("");
+
+  const handleSave = () => {
+    if (completedCount === 0) return;
+    
+    let msg = "";
+    if (completedCount === 1) msg = "Mini session tersimpan. Tetap lebih baik daripada nol, tapi jangan sering-sering kalau mau badan cepat kebentuk.";
+    else if (completedCount === 2) msg = "Light workout. Lumayan buat jaga ritme, tapi next coba minimal 3 gerakan.";
+    else if (completedCount === 3) msg = "Minimum efektif sudah kena. Ini cukup bagus buat hari sibuk.";
+    else if (completedCount === 4) msg = "Solid workout. Progress kamu aman.";
+    else if (completedCount >= 5) msg = "Full workout. Mantap, ini sesi lengkap.";
+
+    const log: WorkoutLog = {
+      templateType: selectedTemplate,
+      workoutScore: workoutScore,
+      isDone: completedCount >= 3, // Still flag as completely 'done' internally if 3+, but everything is saved
+      difficulty: difficulty || 'medium',
+      notes,
+      exercises
+    };
+    
+    setFeedbackMsg(msg);
+    setTimeout(() => {
+       onSaveWorkout(log);
+       onClose();
+    }, 2500);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto pt-10">
+      <div className="w-full max-w-md bg-[#111115] border border-white/10 rounded-3xl overflow-hidden shadow-2xl relative max-h-[85vh] flex flex-col">
         
         {/* Header */}
-        <div className="flex justify-between items-center p-5 border-b border-zinc-800/80">
-          <h3 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
-            <Dumbbell className="w-5 h-5 text-purple-500" />
-            Latihan Hari Ini
+        <div className="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
+          <h3 className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-wide">
+            <Dumbbell className="w-4 h-4 text-purple-500" />
+            Tracker Latihan
           </h3>
-          <button onClick={onClose} className="p-1.5 bg-zinc-800 text-zinc-400 hover:text-white rounded-lg transition cursor-pointer">
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+        <div className="p-4 space-y-5 overflow-y-auto flex-1">
           
           {/* Template Selector Tabs */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-400">PILIH TEMPLATE PROGRAM LATIHAN</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setSelectedTemplate('shoulder_posture')}
-                className={`p-3 rounded-xl border text-xs font-bold text-left transition cursor-pointer ${
-                  selectedTemplate === 'shoulder_posture'
-                    ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                    : 'bg-zinc-950 border-zinc-850 text-zinc-450 hover:bg-zinc-900 border-zinc-800 text-zinc-400'
-                }`}
-              >
-                 Shoulder & Posture
-              </button>
-              <button
-                onClick={() => setSelectedTemplate('chest_upper')}
-                className={`p-3 rounded-xl border text-xs font-bold text-left transition cursor-pointer ${
-                  selectedTemplate === 'chest_upper'
-                    ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                    : 'bg-zinc-950 border-zinc-850 text-zinc-450 hover:bg-zinc-900 border-zinc-800 text-zinc-400'
-                }`}
-              >
-                 Chest & Upper
-              </button>
-              <button
-                onClick={() => setSelectedTemplate('core_padel')}
-                className={`p-3 rounded-xl border text-xs font-bold text-left transition cursor-pointer ${
-                  selectedTemplate === 'core_padel'
-                    ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                    : 'bg-zinc-950 border-zinc-850 text-zinc-450 hover:bg-zinc-900 border-zinc-800 text-zinc-400'
-                }`}
-              >
-                 Core & Padel Support
-              </button>
-              <button
-                onClick={() => setSelectedTemplate('custom')}
-                className={`p-3 rounded-xl border text-xs font-bold text-left transition cursor-pointer ${
-                  selectedTemplate === 'custom'
-                    ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                    : 'bg-zinc-950 border-zinc-850 text-zinc-450 hover:bg-zinc-900 border-zinc-800 text-zinc-400'
-                }`}
-              >
-                ✏️ Latihan Custom
-              </button>
-            </div>
-          </div>
-
-          {/* List of exercises recommendation tailored to 3kg and 6kg DB and pull-up setup */}
-          {currentTemplate && (
-            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 space-y-3">
-              <div>
-                <span className="text-[10px] bg-purple-500/10 text-purple-400 font-extrabold px-2 py-0.5 rounded">
-                  {currentTemplate.title}
-                </span>
-                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{currentTemplate.description}</p>
-              </div>
-
-              <div className="space-y-2 border-t border-zinc-900 pt-2.5">
-                {currentTemplate.exercises.map((ex, idx) => (
-                  <div key={idx} className="flex gap-2.5 items-start text-xs leading-relaxed">
-                    <span className="text-purple-500 font-bold font-mono">#{idx + 1}</span>
-                    <div>
-                      <span className="block font-bold text-zinc-200">{ex.name}</span>
-                      <span className="text-[10px] text-zinc-500">{ex.description}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {selectedTemplate === 'custom' && (
-            <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-2xl space-y-1">
-              <span className="text-xs font-bold text-zinc-300">Latihan Custom</span>
-              <p className="text-[10px] text-zinc-500">Gunakan dumbbell 3kg dan 6kg milikmu untuk melakukan gerakan squat, press, bicep curl, abs crunch, wadahi porsi gerakanmu di kolom catatan di bawah.</p>
-            </div>
-          )}
-
-          {/* Completion check */}
-          <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="block text-xs font-bold text-zinc-300">STATUS SELESAI</span>
-              <p className="text-[10.5px] text-zinc-500">Tandai jika kamu sudah menyelesaikan menu hari ini</p>
-            </div>
-            
+          <div className="flex gap-2 p-1 bg-black/50 rounded-xl">
             <button
-              onClick={() => setIsDone(!isDone)}
-              className={`w-14 h-8 rounded-full p-1 transition-colors duration-200 focus:outline-none cursor-pointer ${
-                isDone ? 'bg-purple-500 flex justify-end' : 'bg-zinc-800 flex justify-start'
+              onClick={() => setSelectedTemplate('plan_a')}
+              className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition cursor-pointer ${
+                selectedTemplate === 'plan_a' ? 'bg-purple-500 text-white' : 'text-slate-500 hover:text-white'
               }`}
             >
-              <span className="w-6 h-6 rounded-full bg-white shadow-md block"></span>
+               Plan A
+            </button>
+            <button
+              onClick={() => setSelectedTemplate('plan_b')}
+              className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition cursor-pointer ${
+                selectedTemplate === 'plan_b' ? 'bg-purple-500 text-white' : 'text-slate-500 hover:text-white'
+              }`}
+            >
+               Plan B
+            </button>
+            <button
+              onClick={() => setSelectedTemplate('recovery')}
+              className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase transition cursor-pointer ${
+                selectedTemplate === 'recovery' ? 'bg-purple-500 text-white' : 'text-slate-500 hover:text-white'
+              }`}
+            >
+               Recovery
             </button>
           </div>
 
-          {/* Only when isDone, select difficulty */}
-          {isDone && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-zinc-400">TINGKAT KESULITAN / FEEL LATIHAN</label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['easy', 'medium', 'hard', 'failed'] as const).map((diff) => {
-                  let label = 'Easy';
-                  let colorClass = 'bg-zinc-950 border-zinc-800 text-zinc-400';
-                  if (diff === 'easy') {
-                    label = 'Ringan';
-                    if (difficulty === 'easy') colorClass = 'bg-emerald-500/15 border-emerald-500 text-emerald-400';
-                  } else if (diff === 'medium') {
-                    label = 'Sedang';
-                    if (difficulty === 'medium') colorClass = 'bg-orange-500/15 border-orange-500 text-orange-400';
-                  } else if (diff === 'hard') {
-                    label = 'Berat';
-                    if (difficulty === 'hard') colorClass = 'bg-red-500/15 border-red-500 text-red-400';
-                  } else if (diff === 'failed') {
-                    label = 'Gagal';
-                    if (difficulty === 'failed') colorClass = 'bg-rose-900/40 border-rose-500 text-rose-500';
-                  }
+          <div className="space-y-3">
+             <div className="flex justify-between flex-wrap gap-2 items-end border-b border-white/5 pb-2">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Daftar Gerakan</span>
+                <span className={`text-[10px] font-black uppercase ${completionColor}`}>
+                   Selesai {completedCount}/{exercises.length} — {completionMessage}
+                </span>
+             </div>
 
-                  return (
-                    <button
-                      key={diff}
-                      onClick={() => setDifficulty(diff)}
-                      className={`py-2 text-xs font-bold rounded-lg border text-center transition cursor-pointer ${colorClass}`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+             {exercises.length === 0 && (
+                <div className="text-center py-6 text-slate-500 text-xs">Menu custom belum disupport di preview ini.<br/>Pilih Plan A / B.</div>
+             )}
 
-          {/* Workout Notes */}
-          <div className="space-y-1.5 animate-fade-in">
-            <label className="text-xs font-bold text-zinc-400">CATATAN LATIHAN / REPS & SETS (OPSIONAL)</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Contoh: Lateral raises tempo lambat 3x12 repetisi dengan DB 3kg. Dada terasa kencang."
-              className="w-full bg-zinc-950 border border-zinc-800 focus:border-purple-500 focus:outline-none rounded-2xl p-3 text-xs text-zinc-200 placeholder:text-zinc-650 h-20 resize-none font-sans"
-            />
+             {exercises.map((ex, idx) => (
+                <div key={idx} className={`p-4 rounded-2xl border transition-all ${ex.isCompleted ? 'bg-emerald-900/10 border-emerald-500/30' : (ex.isSkipped ? 'bg-red-900/10 border-red-500/20 opacity-75' : 'bg-black/40 border-white/10')}`}>
+                   {/* Title Row */}
+                   <div className="flex justify-between items-start mb-3">
+                      <div>
+                         <span className="text-xs font-bold text-white flex items-center gap-1.5">{ex.name}</span>
+                         <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1 block">{ex.category}</span>
+                      </div>
+                      <div className="flex gap-2">
+                         <button 
+                           onClick={() => updateExercise(idx, { isCompleted: !ex.isCompleted, isSkipped: false })}
+                           className={`p-1.5 rounded-full transition cursor-pointer ${ex.isCompleted ? 'bg-emerald-500 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                         >
+                           <CheckCircle2 className="w-5 h-5" />
+                         </button>
+                         <button 
+                           onClick={() => updateExercise(idx, { isSkipped: !ex.isSkipped, isCompleted: false })}
+                           className={`p-1.5 rounded-full transition cursor-pointer ${ex.isSkipped ? 'bg-red-500 text-white' : 'bg-white/5 text-slate-400 hover:text-white'}`}
+                         >
+                           <FastForward className="w-5 h-5" />
+                         </button>
+                      </div>
+                   </div>
+
+                   {/* Sub Controls - Only if not skipped */}
+                   {!ex.isSkipped && (
+                     <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-white/5">
+                        <select 
+                          value={ex.weight || 'bodyweight'}
+                          onChange={(e) => updateExercise(idx, { weight: e.target.value as any })}
+                          className="bg-black/50 border border-white/10 rounded-lg p-2 text-[10px] text-white outline-none"
+                        >
+                           <option value="bodyweight">Bodyweight</option>
+                           <option value="3kg">Dumbbell 3kg</option>
+                           <option value="6kg">Dumbbell 6kg</option>
+                        </select>
+                        <select 
+                          value={ex.difficulty || ''}
+                          onChange={(e) => updateExercise(idx, { difficulty: e.target.value as any })}
+                          className="bg-black/50 border border-white/10 rounded-lg p-2 text-[10px] text-white outline-none"
+                        >
+                           <option value="" disabled>Feel?</option>
+                           <option value="easy">Ringan</option>
+                           <option value="medium">Sedang</option>
+                           <option value="hard">Berat / Mentok</option>
+                           <option value="failed">Gagal / Sakit</option>
+                        </select>
+                        <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-lg p-1.5 px-2">
+                           <input type="number" value={ex.sets || ''} onChange={e => updateExercise(idx, { sets: parseInt(e.target.value) })} className="w-full bg-transparent text-white text-[10px] text-center outline-none" placeholder="S" />
+                           <span className="text-slate-500 text-[10px]">x</span>
+                           {ex.durationSeconds ? (
+                              <input type="number" value={ex.durationSeconds || ''} onChange={e => updateExercise(idx, { durationSeconds: parseInt(e.target.value) })} className="w-full bg-transparent text-white text-[10px] text-center outline-none" placeholder="Detik" />
+                           ) : (
+                              <input type="number" value={ex.reps || ''} onChange={e => updateExercise(idx, { reps: parseInt(e.target.value) })} className="w-full bg-transparent text-white text-[10px] text-center outline-none" placeholder="R" />
+                           )}
+                        </div>
+                     </div>
+                   )}
+
+                   {ex.isSkipped && (
+                     <div className="mt-2 text-[10px] text-slate-500 italic">Latihan dilewatkan.</div>
+                   )}
+                </div>
+             ))}
+
+             <div className="flex gap-2">
+               <button onClick={() => addQuickExercise('Scapular Pull-up', 'main')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-300 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 border border-white/5 border-dashed">
+                  <Plus className="w-3.5 h-3.5" /> Scapular Pull-up
+               </button>
+               <button onClick={() => addQuickExercise('Plank Finisher', 'core')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-300 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 border border-white/5 border-dashed">
+                  <Plus className="w-3.5 h-3.5" /> Plank
+               </button>
+               <button onClick={() => addQuickExercise('Side Plank', 'bonus')} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-300 rounded-xl transition cursor-pointer flex items-center justify-center gap-1 border border-white/5 border-dashed">
+                  <Plus className="w-3.5 h-3.5" /> Side Plank
+               </button>
+             </div>
+          </div>
+
+          <div className="space-y-2 mt-4 pt-4 border-t border-white/5">
+             <label className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">Keseluruhan (Overall Difficulty & Notes)</label>
+             <div className="flex gap-2">
+               {(['easy', 'medium', 'hard'] as const).map(diff => (
+                 <button 
+                    key={diff}
+                    onClick={() => setDifficulty(diff)}
+                    className={`flex-1 py-2 text-[10px] font-bold rounded-lg border transition ${difficulty === diff ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-black/30 border-white/10 text-slate-400'}`}
+                 >
+                    {diff === 'easy' ? 'Ringan' : (diff === 'medium' ? 'Pas' : 'Super Berat')}
+                 </button>
+               ))}
+             </div>
+             <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Ada rasa nyeri sendi atau progress repetisi? Catat di sini biar gampang dievaluasi minggu depan."
+                className="w-full bg-black/50 border border-white/10 focus:border-purple-500 rounded-xl p-3 text-xs text-white placeholder:text-slate-600 h-20 resize-none font-sans"
+              />
           </div>
 
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-zinc-950 border-t border-zinc-800 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-zinc-850 hover:bg-zinc-800 text-xs font-bold text-zinc-400 rounded-xl transition cursor-pointer border border-zinc-800"
-          >
-            Tutup
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 font-bold text-white text-xs rounded-xl transition cursor-pointer flex items-center gap-1 shadow-lg"
-          >
-            <Check className="w-3.5 h-3.5" /> Simpan Latihan
-          </button>
+        <div className="p-4 bg-white/5 border-t border-white/10">
+           {feedbackMsg ? (
+              <div className="p-3 mb-2 rounded-xl bg-purple-500/20 border border-purple-500/50 text-purple-200 text-xs text-center font-bold animate-pulse">
+                {feedbackMsg}
+              </div>
+           ) : null}
+           <div className="flex justify-between gap-2 items-center">
+             <span className="text-[10px] text-slate-500 font-bold uppercase w-1/3">Target: Min. 1 Gerak</span>
+             <button
+               onClick={handleSave}
+               disabled={feedbackMsg !== ""}
+               className={`w-2/3 py-3 font-black text-[10px] uppercase tracking-widest rounded-xl transition cursor-pointer flex justify-center items-center gap-1.5 shadow-lg ${isWorkoutValid && !feedbackMsg ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-slate-700 text-slate-400 opacity-50'}`}
+             >
+               {isWorkoutValid ? <><Save className="w-3.5 h-3.5" /> Simpan Sesi</> : 'Belum Selesai'}
+             </button>
+           </div>
         </div>
 
       </div>

@@ -187,8 +187,12 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-400 block mb-2">Suka Progress Seberapa Cepat?</label>
                 <div className="flex gap-2">
-                  {['santai', 'normal', 'agresif'].map(t => (
-                    <button key={t} onClick={() => setFormData({ ...formData, timeline: t })} className={`flex-1 py-2 border rounded-lg cursor-pointer text-xs font-bold uppercase transition ${formData.timeline === t ? 'bg-amber-500/10 border-amber-500 text-amber-400' : 'bg-[#111115] border-white/10 text-slate-400'}`}>{t}</button>
+                  {[
+                    { id: 'relaxed', label: 'Santai' },
+                    { id: 'normal', label: 'Normal' },
+                    { id: 'aggressive', label: 'Agak agresif' }
+                  ].map(t => (
+                    <button key={t.id} onClick={() => setFormData({ ...formData, timeline: t.id })} className={`flex-1 py-2 border rounded-lg cursor-pointer text-xs font-bold uppercase transition ${formData.timeline === t.id ? 'bg-amber-500/10 border-amber-500 text-amber-400' : 'bg-[#111115] border-white/10 text-slate-400'}`}>{t.label}</button>
                   ))}
                 </div>
               </div>
